@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST="{\"src/components/SplitHero.tsx -> ./HeroSequence\":{\"id\":\"src/components/SplitHero.tsx -> ./HeroSequence\",\"files\":[\"static/chunks/_app-pages-browser_src_components_HeroSequence_tsx.js\"]}}"
