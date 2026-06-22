@@ -1,1 +1,0 @@
-self.__NEXT_FONT_MANIFEST="{\"pages\":{},\"app\":{\"/Users/yiannisconstantinides/vscode/propsights/artifacts/landing-next/app/layout\":[\"static/media/5fb5c05ff73c0616-s.p.woff2\",\"static/media/437e5f23c97e320c-s.p.woff2\",\"static/media/79f0f365efbf4f90-s.p.woff2\",\"static/media/e4af272ccee01ff0-s.p.woff2\"]},\"appUsingSizeAdjust\":true,\"pagesUsingSizeAdjust\":false}"
