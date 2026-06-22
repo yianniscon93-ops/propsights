@@ -1,0 +1,109 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Barlow Condensed', sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  /* Dark palette */
+  --ink:         #0C100A;
+  --ink-surface: #141910;
+  --ink-border:  rgba(255,255,255,0.07);
+  --ink-text:    #D0DCC0;
+  --ink-muted:   #6E7D62;
+  --data-green:  #8FCC80;
+
+  /* Light palette */
+  --paper:       #FFFFFF;
+  --paper-2:     #F2F5EE;
+  --paper-border:#D0D9C6;
+  --paper-text:  #1A2014;
+  --paper-muted: #697264;
+
+  /* Shared olive accent */
+  --olive:       #4A5E3A;
+  --olive-mid:   #6B7B4F;
+  --olive-light: #A8C290;
+}
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: #0C100A;
+    color: #D0DCC0;
+    margin: 0;
+    padding: 0;
+  }
+  .font-display {
+    font-family: 'Barlow Condensed', sans-serif;
+  }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* ── Leaflet (hero map — light basemap) ─────────────────────── */
+.leaflet-container {
+  background: #E8EDE3;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+}
+.leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.7) !important;
+  color: rgba(40, 52, 32, 0.55) !important;
+  font-size: 9px !important;
+  padding: 1px 5px !important;
+  backdrop-filter: blur(2px);
+}
+.leaflet-control-attribution a {
+  color: rgba(74, 94, 58, 0.85) !important;
+}
+
+.ps-pin-wrap {
+  background: transparent !important;
+  border: 0 !important;
+}
+.ps-pin {
+  display: block;
+  width: 11px;
+  height: 11px;
+  border-radius: 9999px;
+  background: #4A5E3A;
+  box-shadow: 0 0 0 2px #FFFFFF, 0 1px 4px rgba(20, 30, 15, 0.35);
+  cursor: pointer;
+}
+.ps-pin-active {
+  width: 18px;
+  height: 18px;
+  background: #4A5E3A;
+  box-shadow: 0 0 0 3px #FFFFFF, 0 0 0 6px rgba(74, 94, 58, 0.3), 0 0 16px rgba(74, 94, 58, 0.55);
+  animation: ps-pulse 1.8s ease-out infinite;
+}
+@keyframes ps-pulse {
+  0%   { box-shadow: 0 0 0 3px #FFFFFF, 0 0 0 6px rgba(74, 94, 58, 0.4), 0 0 16px rgba(74, 94, 58, 0.55); }
+  70%  { box-shadow: 0 0 0 3px #FFFFFF, 0 0 0 18px rgba(74, 94, 58, 0), 0 0 16px rgba(74, 94, 58, 0.35); }
+  100% { box-shadow: 0 0 0 3px #FFFFFF, 0 0 0 6px rgba(74, 94, 58, 0), 0 0 16px rgba(74, 94, 58, 0.35); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-pin-active { animation: none; }
+  .cursor-blink { animation: none; }
+}

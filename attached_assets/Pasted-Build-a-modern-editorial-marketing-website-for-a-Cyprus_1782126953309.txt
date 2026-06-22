@@ -1,0 +1,167 @@
+Build a modern editorial marketing website for a Cyprus short-term rental intelligence platform. The working brand name is PropSights — render "Prop" in dark charcoal and "Sights" in olive green (#4A5E3A) wherever the name appears. This is a placeholder name; the structure must make it easy to swap.
+
+This is a marketing website, not the app itself. Its job is to communicate what the product does, make the user feel the value instantly through an interactive search, then walk them through the 5 products via scroll storytelling.
+
+The 5 Products
+These must be communicated clearly through the site:
+
+Dashboard — Interactive map where you draw an area and instantly see occupancy, pricing, reviews and supply metrics
+Dynamic Pricing — AI-powered pricing recommendations that maximise revenue night by night
+Market Analysis — Competitor monitoring and market intelligence across any area
+Predictions — Forward-looking models for occupancy and nightly rates
+Property Reports — Tailored PDF-style insights reports for individual properties or investment decisions
+Color Palette
+Role	Value
+Page background	#F5F0E8 (warm parchment)
+Primary / brand accent	#4A5E3A (olive green)
+Secondary accent	#6B7B4F (lighter olive)
+Card surface	#FEFCF8 (cream white)
+Borders	#D4CCBA (warm sand)
+Body text	#2C2C27 (near-black, warm)
+Muted text	#7A7468
+Dark section background	#38492C (dark olive)
+Brand highlight ("Sights")	#4A5E3A
+No blues, no greys, no cool tones anywhere.
+
+Typography
+Headings: Playfair Display (Google Fonts) — 600–700 weight, serif
+Body / UI: DM Sans (Google Fonts) — clean, modern
+Load via next/font/google
+Tech Stack
+Next.js (App Router, TypeScript)
+Tailwind CSS
+Framer Motion for all animations
+No backend — mock data only
+Page Structure
+Section 1 — Hero
+Full viewport height. Centered content.
+
+Headline — large Playfair Display, ~64px, two lines max:
+
+"Turn Cyprus property data into
+confident decisions."
+
+The word "confident" renders in olive green (#4A5E3A).
+
+Subline — DM Sans, muted, ~18px:
+
+"Live market intelligence for every short-term rental in Cyprus. Search any area and see the data instantly."
+
+Search bar — pill-shaped, prominent, sits below the subline with generous spacing. A styled dropdown on the left, olive green "Explore Market" button on the right.
+
+Dropdown options:
+Nicosia, Limassol, Paphos, Larnaca, Ayia Napa, Protaras, Polis, Latchi, Pissouri, Troodos, Kokkinochoria, Famagusta District
+
+On page load: after 1.5s, the search bar emits one soft olive green glow pulse. Never repeats.
+
+On "Explore Market" click:
+
+Button switches to "Analysing..." with animated ellipsis for 600ms
+Headline and subline slide up and fade out (Framer Motion)
+Area badge appears: olive green pill — e.g. 📍 Limassol
+4 stat cards spring in with staggered animation — scale(0.92) → scale(1.02) → scale(1) + fade-up, 80ms stagger
+Numbers count up from 0 using requestAnimationFrame, decelerating at the end
+Occupancy card includes a thin arc that animates from 0 to the correct angle
+Below cards: "Want the full picture? See what's coming." — fades in, links to Section 2
+Changing area and re-searching: cards fade out first, then new cards spring in.
+
+Cards (4):
+
+Avg. Nightly Rate — e.g. €142
+Occupancy Rate — e.g. 74% with animated arc
+Active Listings — e.g. 521
+Est. Monthly Revenue — e.g. €3,210
+Card hover: number scales 3%, card lifts with box-shadow.
+
+Section 2 — Product Overview (Bento Grid)
+Heading in Playfair Display, centered:
+
+"Everything you need to understand the market."
+
+A 5-tile asymmetric bento grid. Each tile: cream background, warm sand border, olive green icon, product name bold, one-line description underneath. Tiles are not equal size — make the Dashboard tile large (spanning 2 columns), others smaller. On hover each tile lifts slightly and a subtle background pattern or chart sketch fades in behind the content.
+
+Tiles:
+
+Dashboard (large) — "Draw any area on the map. Get instant occupancy, pricing and supply metrics."
+Dynamic Pricing — "AI recommendations that fill your calendar at the right price."
+Market Analysis — "Track competitors. Spot trends before the market does."
+Predictions — "Forward-looking occupancy and rate forecasts."
+Property Reports — "Tailored intelligence reports for any property or investment."
+Section 3 — Scroll Storytelling (5 Products)
+Each product gets a full-viewport scroll section. Sections alternate layout: text left / visual right, then text right / visual left.
+
+Each section structure:
+
+Small olive green label at top — e.g. 01 / Dashboard
+Large Playfair Display headline — one strong line about the outcome
+2–3 lines of body copy
+A UI mockup or abstract data visual on the other side (can be placeholder blocks that suggest charts, maps, numbers — styled but not real screenshots)
+Section fades in as it enters the viewport
+The 5 sections:
+
+01 / Dashboard
+Headline: "See every listing. Anywhere. Instantly."
+Body: Draw a precise area on the map — a street, a beachfront, a neighborhood — and get live occupancy rates, nightly pricing, review scores and supply depth. No guesswork, no aggregations hiding the detail.
+Visual: Stylised map with dots and a drawn polygon zone, metric cards floating beside it.
+
+02 / Dynamic Pricing
+Headline: "The right price. Every single night."
+Body: Our pricing engine watches demand signals, local events, competitor rate shifts and seasonal patterns — and tells you exactly what to charge. Set it once, let it work.
+Visual: A pricing curve chart with highlighted peaks, olive green line on cream background.
+
+03 / Market Analysis
+Headline: "Know what your competitors are doing."
+Body: Track any set of listings over time. See when they drop prices, when they go dark, when demand in their area spikes. Competitor intelligence, automated.
+Visual: A grid of competitor listing cards with occupancy bars and price tags.
+
+04 / Predictions
+Headline: "What will the market look like in 3 months?"
+Body: Trained on years of Cyprus STR data, our forecasting models project occupancy and rate trends by area — so you can plan, price and invest ahead of the curve.
+Visual: A forecast chart with a dotted future projection line diverging from historical data.
+
+05 / Property Reports
+Headline: "The full picture, delivered."
+Body: Need to evaluate a specific property? We generate a tailored report — occupancy benchmarks, revenue potential, competitor context, seasonal breakdown — formatted and ready to share.
+Visual: A stylised report cover / page mockup with olive green header and data sections.
+
+Section 4 — Data Credibility Strip
+Full-width. Dark olive background (#38492C). White Playfair Display numbers, DM Sans labels. Four stats centered horizontally:
+
+3,400+ Listings tracked
+12 Districts covered
+48hrs Data refresh cycle
+2+ Years of history
+Section 5 — CTA
+Warm cream background. Centered. Large Playfair Display heading:
+
+"Be first to know when we launch."
+
+Body: "Early access is limited. Leave your email and we'll reach out."
+
+Email input field + olive green "Request Access" button. On submit: button text changes to "You're on the list ✓", no page reload needed.
+
+Footer
+Minimal. PropSights name left (Prop dark, Sights olive). © 2026 PropSights right. Links: Privacy · Terms.
+
+Mock Data Per Area
+
+const areaData = {
+  Limassol:             { rate: 142, occupancy: 74, listings: 521, revenue: 3210 },
+  Paphos:               { rate: 118, occupancy: 68, listings: 389, revenue: 2540 },
+  "Ayia Napa":          { rate: 165, occupancy: 81, listings: 287, revenue: 4010 },
+  Protaras:             { rate: 158, occupancy: 79, listings: 203, revenue: 3780 },
+  Larnaca:              { rate: 94,  occupancy: 63, listings: 312, revenue: 1890 },
+  Nicosia:              { rate: 78,  occupancy: 55, listings: 198, revenue: 1360 },
+  Polis:                { rate: 105, occupancy: 66, listings: 87,  revenue: 2200 },
+  Latchi:               { rate: 112, occupancy: 70, listings: 63,  revenue: 2490 },
+  Pissouri:             { rate: 131, occupancy: 72, listings: 45,  revenue: 2990 },
+  Troodos:              { rate: 88,  occupancy: 58, listings: 72,  revenue: 1620 },
+  Kokkinochoria:        { rate: 97,  occupancy: 64, listings: 118, revenue: 1970 },
+  "Famagusta District": { rate: 109, occupancy: 67, listings: 156, revenue: 2310 },
+}
+Non-Negotiables
+The search-to-results transition is the centerpiece — spring animations, counting numbers, arc reveal. It must feel like a reward.
+Scroll storytelling sections must feel cinematic — each one is a chapter, not a feature list item.
+Fully mobile responsive. On mobile: bento grid stacks, scroll sections stack vertically, search bar goes full width.
+No cool tones anywhere. Everything warm, editorial, premium.
+Typography hierarchy is the main design tool — let the headlines do the work.

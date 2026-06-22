@@ -1,0 +1,1 @@
+- [Frontend dev/verification quirks](frontend-dev-quirks.md) — react-leaflet first-load React-dup error clears on reload; app_preview screenshots catch animation initial frame; isolate map layer so overlays sit above Leaflet panes.
