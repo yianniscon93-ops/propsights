@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, ChevronDown } from "lucide-react";
+import { ArrowRight, ChevronDown, BarChart3 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { AREA_DATA } from "@/lib/areaData";
 import type { Stage } from "./HeroSequence";
@@ -11,13 +11,13 @@ import type { Stage } from "./HeroSequence";
 const HeroSequence = dynamic(() => import("./HeroSequence"), { ssr: false });
 
 const SEQUENCE_AREAS = ["Limassol", "Ayia Napa", "Paphos", "Protaras", "Larnaca", "Polis"];
-const STAGES: Stage[] = ["map", "zoom", "draw", "listings", "dashboard"];
+const STAGES: Stage[] = ["map", "zoom", "draw", "market", "pricing"];
 const STAGE_MS: Record<Stage, number> = {
   map: 2200,
   zoom: 2600,
   draw: 3400,
-  listings: 3400,
-  dashboard: 4200,
+  market: 3800,
+  pricing: 3800,
 };
 
 function useTypeTo(target: string) {
@@ -188,6 +188,13 @@ export default function SplitHero() {
               Get Access <ArrowRight size={14} />
             </a>
             <a
+              href="/dashboard"
+              className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl text-sm font-medium transition-all hover:text-white"
+              style={{ color: "#8FCC80", border: "1px solid rgba(143,204,128,0.25)" }}
+            >
+              <BarChart3 size={14} /> Try dashboard
+            </a>
+            <a
               href="#products"
               className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl text-sm font-medium transition-all hover:text-white"
               style={{ color: "#6E7D62", border: "1px solid rgba(255,255,255,0.08)" }}
@@ -198,18 +205,18 @@ export default function SplitHero() {
         </motion.div>
       </div>
 
-      {/* ── Right: light side ── */}
+      {/* ── Right: dark side ── */}
       <motion.div
         className="md:w-[44%] flex flex-col justify-center px-6 md:px-10 lg:px-14 py-20 md:py-0"
-        style={{ background: "#FFFFFF", minHeight: "100vh" }}
+        style={{ background: "#141910", minHeight: "100vh" }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5, delay: 0.2 }}
       >
         <HeroSequence area={activeArea} stage={stage} onSelectArea={selectArea} />
 
-        <div className="mt-6 pt-5 border-t" style={{ borderColor: "#D0D9C6" }}>
-          <p className="text-xs" style={{ color: "#697264" }}>
+        <div className="mt-6 pt-5 border-t" style={{ borderColor: "rgba(255,255,255,0.09)" }}>
+          <p className="text-xs" style={{ color: "#828D74" }}>
             Based on {AREA_DATA[activeArea]?.listings.toLocaleString() ?? "—"} live listings ·
             {" "}PropSights updates every 48h
           </p>

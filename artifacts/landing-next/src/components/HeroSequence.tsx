@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
-import { Building2, Star, MapPin, TrendingUp, PenLine } from "lucide-react";
+import { PenLine, BarChart3, LineChart, ArrowRight } from "lucide-react";
 import { AREA_DATA, AREAS } from "@/lib/areaData";
 
-export type Stage = "map" | "zoom" | "draw" | "listings" | "dashboard";
+export type Stage = "map" | "zoom" | "draw" | "market" | "pricing";
 
 const CYPRUS_CENTER: [number, number] = [34.98, 33.25];
 const CYPRUS_ZOOM = 8;
@@ -182,286 +182,322 @@ function DrawOverlay({ area }: { area: string }) {
   );
 }
 
-const LISTING_TEMPLATES = [
-  { name: "Seafront Apartment", kind: "Entire apartment", beds: 2, mult: 1.14, occ: 6 },
-  { name: "Hillside Villa", kind: "Entire villa", beds: 3, mult: 1.46, occ: -3 },
-  { name: "Town Centre Studio", kind: "Studio", beds: 1, mult: 0.79, occ: 2 },
-];
-const THUMBS = [
-  "linear-gradient(135deg,#4A5E3A 0%,#8FCC80 100%)",
-  "linear-gradient(135deg,#26331C 0%,#6B7B4F 100%)",
-  "linear-gradient(135deg,#6B7B4F 0%,#A8C290 100%)",
-];
-
-function sampleListings(area: string) {
-  const d = AREA_DATA[area];
-  return LISTING_TEMPLATES.map((t, i) => ({
-    id: i,
-    name: t.name,
-    kind: t.kind,
-    beds: t.beds,
-    rate: Math.round(d.rate * 1.12 * t.mult),
-    occ: Math.max(42, Math.min(98, d.occupancy + 7 + t.occ)),
-    rating: (4.72 + i * 0.07).toFixed(2),
-    reviews: 38 + ((d.listings * (i + 3)) % 170),
-  }));
-}
-
-function ListingsView({ area }: { area: string }) {
-  const hood = hoodName(area);
-  const listings = sampleListings(area);
-  return (
-    <motion.div
-      key="listings"
-      className="absolute inset-0 z-10 flex flex-col p-4 md:p-5"
-      style={{ background: "#FFFFFF" }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-    >
-      <div className="flex items-center justify-between mb-3 shrink-0">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <MapPin size={13} style={{ color: "#4A5E3A" }} className="shrink-0" />
-          <span className="text-xs font-semibold truncate" style={{ color: "#1A2014" }}>
-            {hood}
-          </span>
-          <span className="text-[10px] shrink-0" style={{ color: "#9AA690" }}>
-            · {area}
-          </span>
-        </div>
-        <span className="text-[11px] font-medium shrink-0" style={{ color: "#697264" }}>
-          {hoodListingCount(area)} listings
-        </span>
-      </div>
-
-      <div className="flex-1 flex flex-col gap-2.5 min-h-0">
-        {listings.map((l, i) => (
-          <motion.div
-            key={l.id}
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.12 + i * 0.12, duration: 0.35 }}
-            className="flex-1 flex items-center gap-3 rounded-xl p-2.5 border"
-            style={{ borderColor: "#E4EADB", background: "#FFFFFF" }}
-          >
-            <div
-              className="w-16 h-16 rounded-lg shrink-0 flex items-center justify-center"
-              style={{ background: THUMBS[i] }}
-            >
-              <Building2 size={22} color="rgba(255,255,255,0.85)" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-semibold truncate" style={{ color: "#1A2014" }}>
-                  {l.name}
-                </p>
-                <span className="flex items-center gap-0.5 shrink-0">
-                  <Star size={11} fill="#4A5E3A" color="#4A5E3A" />
-                  <span className="text-[11px] font-semibold" style={{ color: "#1A2014" }}>
-                    {l.rating}
-                  </span>
-                </span>
-              </div>
-              <p className="text-[11px] mt-0.5" style={{ color: "#697264" }}>
-                {l.kind} · {l.beds} bed · {l.reviews} reviews
-              </p>
-              <div className="flex items-center justify-between mt-1.5">
-                <span className="text-[11px]" style={{ color: "#697264" }}>
-                  <span className="font-semibold" style={{ color: "#4A5E3A" }}>
-                    {l.occ}%
-                  </span>{" "}
-                  occupancy
-                </span>
-                <span className="font-display font-bold text-sm" style={{ color: "#1A2014" }}>
-                  €{l.rate}
-                  <span className="text-[10px] font-normal" style={{ color: "#697264" }}>
-                    {" "}/night
-                  </span>
-                </span>
-              </div>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-    </motion.div>
-  );
-}
 
 const SEASON = [0.62, 0.66, 0.74, 0.85, 0.95, 1.06, 1.16, 1.18, 1.04, 0.9, 0.72, 0.66];
 const MONTHS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
 
-function DashboardView({ area }: { area: string }) {
-  const d = AREA_DATA[area];
-  const hood = hoodName(area);
+// Dark-glass tokens (inlined — no dependency on dashboard/tokens.ts)
+const DT = {
+  bg: "#0C100A",
+  card: "rgba(255,255,255,0.04)",
+  border: "rgba(255,255,255,0.09)",
+  text: "#EAF0DF",
+  muted: "#ADB8A0",
+  faint: "#828D74",
+  green: "#8FCC80",
+  olive: "#4A5E3A",
+};
 
-  const cityOcc = d.occupancy;
-  const cityRate = d.rate;
-  const hoodOcc = Math.min(98, d.occupancy + 7);
-  const hoodRate = Math.round(d.rate * 1.12);
-  const monthly = Math.round((hoodRate * 30 * hoodOcc) / 100);
-  const listings = hoodListingCount(area);
-  const occDelta = hoodOcc - cityOcc;
+const TYPE_MIX = [
+  { label: "Apartment", share: 52 },
+  { label: "Villa", share: 31 },
+  { label: "Studio", share: 17 },
+];
 
-  const occ = useCountUp(hoodOcc, area);
-  const rate = useCountUp(hoodRate, area);
-  const mon = useCountUp(monthly, area);
+// ── Shared SVG mini-chart helper ──────────────────────────────────────────
 
-  const series = SEASON.map((m) => Math.min(98, Math.round(hoodOcc * m)));
-  const W = 300;
-  const H = 64;
-  const pad = 4;
-  const maxV = Math.max(...series);
-  const floor = Math.min(...series) - 8;
-  const xs = (i: number) => pad + (i / (series.length - 1)) * (W - pad * 2);
-  const ys = (v: number) => H - 3 - ((v - floor) / Math.max(1, maxV - floor)) * (H - 10);
+function MiniLineChart({
+  series,
+  gradId,
+}: {
+  series: number[];
+  gradId: string;
+}) {
+  const W = 300; const H = 56; const PAD = 4;
+  const maxV = Math.max(...series), minV = Math.min(...series);
+  const span = maxV - minV;
+  const floor = minV - span * 0.15, ceil = maxV + span * 0.08;
+  const xs = (i: number) => PAD + (i / (series.length - 1)) * (W - PAD * 2);
+  const ys = (v: number) => H - 2 - ((v - floor) / Math.max(1, ceil - floor)) * (H - 8);
   const linePts = series.map((v, i) => `${xs(i)},${ys(v)}`).join(" ");
   const areaPts = `${xs(0)},${H} ${linePts} ${xs(series.length - 1)},${H}`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-full" style={{ display: "block" }}>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={DT.green} stopOpacity="0.24" />
+          <stop offset="100%" stopColor={DT.green} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {[0.28, 0.55, 0.82].map((f) => (
+        <line key={f} x1={PAD} x2={W - PAD} y1={H * f} y2={H * f} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
+      ))}
+      <motion.polygon points={areaPts} fill={`url(#${gradId})`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.15 }} />
+      <motion.polyline
+        points={linePts} fill="none" stroke={DT.green} strokeWidth={2}
+        strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"
+        initial={{ pathLength: 0 }} animate={{ pathLength: 1 }}
+        transition={{ duration: 0.85, ease: "easeInOut" }}
+      />
+    </svg>
+  );
+}
 
-  const adrMax = Math.round(hoodRate * 1.15);
-  const comps = [
-    { label: "Occupancy", hood: `${hoodOcc}%`, city: `${cityOcc}%`, pct: hoodOcc, cityPct: cityOcc, max: 100 },
-    { label: "Median ADR", hood: `€${hoodRate}`, city: `€${cityRate}`, pct: hoodRate, cityPct: cityRate, max: adrMax },
+// ── Market tab content ─────────────────────────────────────────────────────
+
+function MarketContent({ area }: { area: string }) {
+  const d = AREA_DATA[area];
+  const hoodOcc = Math.min(98, d.occupancy + 7);
+  const hoodRate = Math.round(d.rate * 1.12);
+  const listings = hoodListingCount(area);
+  const fwd60 = Math.round(hoodOcc * 0.88);
+  const occ = useCountUp(hoodOcc, area);
+
+  const occSeries = SEASON.map((m) => Math.min(98, Math.round(hoodOcc * m)));
+
+  const kpis = [
+    { label: "Listings", val: listings.toLocaleString(), accent: false },
+    { label: "Occupancy", val: `${occ}%`, accent: true },
+    { label: "Next 60d", val: `${fwd60}%`, accent: false },
+    { label: "Median ADR", val: `€${hoodRate}`, accent: false },
+  ];
+
+  return (
+    <>
+      {/* KPI cards */}
+      <div className="grid grid-cols-4 gap-1.5 p-2 shrink-0">
+        {kpis.map((k) => (
+          <div key={k.label} className="rounded-xl px-2 py-2" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
+            <p className="font-display font-bold text-sm leading-none" style={{ color: k.accent ? DT.green : DT.text }}>{k.val}</p>
+            <p className="text-[9px] mt-1.5 uppercase tracking-wide font-medium" style={{ color: DT.muted }}>{k.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Weekly occupancy chart */}
+      <div className="flex-1 mx-2 rounded-xl p-2.5 flex flex-col min-h-0" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
+        <div className="flex items-center justify-between mb-1 shrink-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: DT.muted }}>Weekly occupancy</p>
+          <p className="text-[9px]" style={{ color: DT.faint }}>Peak Jul–Aug</p>
+        </div>
+        <div className="flex-1 min-h-0">
+          <MiniLineChart series={occSeries} gradId="heroMktFill" />
+        </div>
+        <div className="flex justify-between mt-1 shrink-0">
+          {MONTHS.map((m, i) => <span key={i} className="text-[8px]" style={{ color: DT.faint }}>{m}</span>)}
+        </div>
+      </div>
+
+      {/* Property mix */}
+      <div className="mx-2 mt-1.5 rounded-xl p-2.5 shrink-0" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
+        <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: DT.muted }}>Property mix</p>
+        <div className="flex flex-col gap-1.5">
+          {TYPE_MIX.map((m) => (
+            <div key={m.label}>
+              <div className="flex justify-between mb-0.5">
+                <span className="text-[10px]" style={{ color: DT.text }}>{m.label}</span>
+                <span className="text-[10px]" style={{ color: DT.muted }}>{m.share}%</span>
+              </div>
+              <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ background: "linear-gradient(90deg,#4A5E3A,#8FCC80)" }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${m.share}%` }}
+                  transition={{ duration: 0.5, delay: 0.1 }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Pricing tab content ────────────────────────────────────────────────────
+
+// Forward prices: seasonal multipliers for next 6 months (Jul–Dec)
+const FWD_MULT = [1.28, 1.32, 1.18, 1.05, 0.88, 0.82];
+const FWD_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Weekly ADR trend (12 weeks)
+const ADR_MULT = [0.85, 0.88, 0.92, 0.98, 1.05, 1.18, 1.32, 1.35, 1.20, 1.04, 0.90, 0.82];
+
+function PricingContent({ area }: { area: string }) {
+  const d = AREA_DATA[area];
+  const hoodRate = Math.round(d.rate * 1.12);
+  const avgRate = Math.round(hoodRate * 1.08);
+  const next30Rate = Math.round(hoodRate * FWD_MULT[0]);
+
+  const fwdSeries = FWD_MULT.map((m) => Math.round(hoodRate * m));
+  const adrSeries = ADR_MULT.map((m) => Math.round(hoodRate * m));
+
+  const kpis = [
+    { label: "Median rate", val: `€${hoodRate}`, accent: true },
+    { label: "Average rate", val: `€${avgRate}`, accent: false },
+    { label: "Next 30d median", val: `€${next30Rate}`, accent: false },
+    { label: "Peak month", val: "August", accent: false },
+  ];
+
+  // Bar chart for forward prices by month
+  const barMax = Math.max(...fwdSeries);
+
+  return (
+    <>
+      {/* KPI cards */}
+      <div className="grid grid-cols-4 gap-1.5 p-2 shrink-0">
+        {kpis.map((k) => (
+          <div key={k.label} className="rounded-xl px-2 py-2" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
+            <p className="font-display font-bold text-sm leading-none" style={{ color: k.accent ? DT.green : DT.text }}>{k.val}</p>
+            <p className="text-[9px] mt-1.5 uppercase tracking-wide font-medium" style={{ color: DT.muted }}>{k.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Forward prices line chart */}
+      <div className="flex-1 mx-2 rounded-xl p-2.5 flex flex-col min-h-0" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
+        <div className="flex items-center justify-between mb-1 shrink-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: DT.muted }}>Forward prices · next 6 months</p>
+          <p className="text-[9px]" style={{ color: DT.faint }}>median nightly</p>
+        </div>
+        <div className="flex-1 min-h-0">
+          <MiniLineChart series={fwdSeries} gradId="heroPriceFill" />
+        </div>
+        <div className="flex justify-between mt-1 shrink-0">
+          {FWD_MONTHS.map((m, i) => <span key={i} className="text-[8px]" style={{ color: DT.faint }}>{m}</span>)}
+        </div>
+      </div>
+
+      {/* Weekly ADR + price distribution side by side */}
+      <div className="grid grid-cols-2 gap-1.5 mx-2 mt-1.5 shrink-0">
+        {/* Weekly ADR bars */}
+        <div className="rounded-xl p-2.5" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
+          <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: DT.muted }}>Weekly ADR</p>
+          <div className="flex items-end gap-0.5" style={{ height: 36 }}>
+            {adrSeries.map((v, i) => {
+              const isPeak = v === Math.max(...adrSeries);
+              return (
+                <motion.div
+                  key={i}
+                  className="flex-1 rounded-t-sm"
+                  style={{ background: isPeak ? DT.green : "rgba(143,204,128,0.45)" }}
+                  initial={{ height: 0 }}
+                  animate={{ height: `${(v / Math.max(...adrSeries)) * 36}px` }}
+                  transition={{ duration: 0.4, delay: i * 0.04 }}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Forward price by month bars */}
+        <div className="rounded-xl p-2.5" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
+          <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: DT.muted }}>By month</p>
+          <div className="flex items-end gap-0.5" style={{ height: 36 }}>
+            {fwdSeries.map((v, i) => {
+              const isPeak = v === barMax;
+              return (
+                <motion.div
+                  key={i}
+                  className="flex-1 rounded-t-sm"
+                  style={{ background: isPeak ? DT.green : "rgba(143,204,128,0.45)" }}
+                  initial={{ height: 0 }}
+                  animate={{ height: `${(v / barMax) * 36}px` }}
+                  transition={{ duration: 0.4, delay: i * 0.06 }}
+                />
+              );
+            })}
+          </div>
+          <div className="flex justify-between mt-1">
+            {FWD_MONTHS.map((m, i) => <span key={i} className="text-[8px]" style={{ color: DT.faint }}>{m[0]}</span>)}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Dashboard shell — wraps header + tabs + content ────────────────────────
+
+function DashboardShell({
+  area,
+  tab,
+  motionKey,
+}: {
+  area: string;
+  tab: "market" | "pricing";
+  motionKey: string;
+}) {
+  const tabs = [
+    { id: "market" as const, label: "Market overview", icon: <BarChart3 size={10} /> },
+    { id: "pricing" as const, label: "Pricing", icon: <LineChart size={10} /> },
   ];
 
   return (
     <motion.div
-      key="dashboard"
-      className="absolute inset-0 z-10 flex flex-col p-4 md:p-5"
-      style={{ background: "#FFFFFF" }}
+      key={motionKey}
+      className="absolute inset-0 z-10 flex flex-col overflow-hidden"
+      style={{ background: DT.bg }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.4 }}
     >
-      <div className="flex items-end justify-between mb-3.5 shrink-0">
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold tracking-[0.16em] uppercase truncate" style={{ color: "#697264" }}>
-            {hood} · {area}
-          </p>
-          <div className="flex items-end gap-1.5 mt-0.5 leading-none">
-            <span
-              className="font-display font-bold leading-none"
-              style={{ fontSize: "clamp(2.6rem,6.5vw,3.6rem)", color: "#1A2014" }}
-            >
-              {occ}
-            </span>
-            <span className="font-display font-bold text-2xl mb-1" style={{ color: "#4A5E3A" }}>
-              %
-            </span>
-            <span
-              className="flex items-center gap-0.5 text-[10px] font-bold mb-2 px-1.5 py-0.5 rounded"
-              style={{ background: "rgba(74,94,58,0.12)", color: "#4A5E3A" }}
-            >
-              <TrendingUp size={10} /> +{occDelta} vs {area}
-            </span>
+      {/* Mini header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b shrink-0" style={{ borderColor: DT.border }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-5 h-5 rounded flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#4A5E3A,#6B7B4F)" }}>
+            <span className="text-white font-display text-[10px] font-bold">P</span>
           </div>
-          <p className="text-[11px]" style={{ color: "#697264" }}>
-            average occupancy
-          </p>
+          <span className="text-[11px] font-medium truncate" style={{ color: DT.muted }}>Market Dashboard · {area}</span>
         </div>
-        <span
-          className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full shrink-0"
-          style={{ background: "rgba(74,94,58,0.12)", color: "#4A5E3A" }}
-        >
-          <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "#8FCC80" }} />
-          LIVE
+        <span className="flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(143,204,128,0.12)", color: DT.green }}>
+          <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: DT.green }} />LIVE
         </span>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mb-3 shrink-0">
-        {[
-          { label: "Median ADR", val: `€${rate}` },
-          { label: "Est. monthly", val: `€${mon.toLocaleString()}` },
-          { label: "Active listings", val: listings.toLocaleString() },
-        ].map((s) => (
-          <div key={s.label} className="rounded-lg p-2.5" style={{ background: "#F2F5EE", border: "1px solid #E4EADB" }}>
-            <p className="font-display font-bold text-base" style={{ color: "#1A2014" }}>
-              {s.val}
-            </p>
-            <p className="text-[10px] mt-0.5" style={{ color: "#697264" }}>
-              {s.label}
-            </p>
-          </div>
-        ))}
+      {/* Tab bar — driven by stage, not interactive */}
+      <div className="flex items-center px-3 border-b shrink-0" style={{ borderColor: DT.border }}>
+        {tabs.map((t) => {
+          const active = tab === t.id;
+          return (
+            <div
+              key={t.id}
+              className="flex items-center gap-1 px-3 py-2 text-[11px] font-semibold"
+              style={active
+                ? { color: DT.text, borderBottom: `2px solid ${DT.green}`, marginBottom: -1 }
+                : { color: DT.faint, borderBottom: "2px solid transparent", marginBottom: -1 }}
+            >
+              <span style={{ color: active ? DT.green : DT.faint }}>{t.icon}</span>
+              {t.label}
+            </div>
+          );
+        })}
       </div>
 
-      <div className="flex-1 rounded-xl p-3 flex flex-col min-h-0 mb-3" style={{ background: "#F2F5EE", border: "1px solid #E4EADB" }}>
-        <div className="flex items-center justify-between mb-1.5 shrink-0">
-          <p className="text-[10px] font-semibold" style={{ color: "#697264" }}>
-            Occupancy · by month
-          </p>
-          <p className="text-[9px]" style={{ color: "#9AA690" }}>
-            Peak Jul–Aug
-          </p>
-        </div>
-        <div className="flex-1 min-h-0">
-          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-full" style={{ display: "block" }}>
-            <defs>
-              <linearGradient id="seasonFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#4A5E3A" stopOpacity="0.28" />
-                <stop offset="100%" stopColor="#4A5E3A" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <motion.polygon
-              points={areaPts}
-              fill="url(#seasonFill)"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-            />
-            <motion.polyline
-              points={linePts}
-              fill="none"
-              stroke="#4A5E3A"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-              initial={{ pathLength: 0 }}
-              animate={{ pathLength: 1 }}
-              transition={{ duration: 0.9, ease: "easeInOut" }}
-            />
-          </svg>
-        </div>
-        <div className="flex justify-between mt-1 shrink-0">
-          {MONTHS.map((m, i) => (
-            <span key={i} className="text-[8px]" style={{ color: "#9AA690" }}>
-              {m}
-            </span>
-          ))}
-        </div>
-      </div>
+      {/* Tab content — animates on switch */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={tab}
+          className="flex-1 flex flex-col overflow-hidden"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.3 }}
+        >
+          {tab === "market" ? <MarketContent area={area} /> : <PricingContent area={area} />}
+        </motion.div>
+      </AnimatePresence>
 
-      <div className="grid grid-cols-2 gap-2 shrink-0">
-        {comps.map((c) => (
-          <div key={c.label} className="rounded-lg p-2.5" style={{ background: "#F2F5EE", border: "1px solid #E4EADB" }}>
-            <p className="text-[10px] font-semibold mb-1.5" style={{ color: "#1A2014" }}>
-              {c.label}
-            </p>
-            <div className="relative h-1.5 rounded-full" style={{ background: "#E4EADB" }}>
-              <motion.div
-                className="absolute inset-y-0 left-0 rounded-full"
-                style={{ background: "linear-gradient(90deg,#4A5E3A,#8FCC80)" }}
-                initial={{ width: 0 }}
-                animate={{ width: `${(c.pct / c.max) * 100}%` }}
-                transition={{ duration: 0.6, delay: 0.25 }}
-              />
-              <span
-                className="absolute top-1/2 -translate-y-1/2 w-0.5 h-3 rounded-full"
-                style={{ left: `${(c.cityPct / c.max) * 100}%`, background: "#697264" }}
-              />
-            </div>
-            <div className="flex items-center justify-between mt-1">
-              <span className="text-[11px] font-bold" style={{ color: "#4A5E3A" }}>
-                {c.hood}
-              </span>
-              <span className="text-[9px]" style={{ color: "#9AA690" }}>
-                {area} {c.city}
-              </span>
-            </div>
-          </div>
-        ))}
+      {/* CTA */}
+      <div className="px-2 py-2 shrink-0">
+        <a
+          href="/dashboard"
+          className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
+          style={{ background: DT.olive, color: "#FFFFFF" }}
+        >
+          Open full dashboard <ArrowRight size={11} />
+        </a>
       </div>
     </motion.div>
   );
@@ -472,8 +508,8 @@ function caption(stage: Stage, area: string) {
     case "map": return "Scanning all of Cyprus";
     case "zoom": return `Zooming into ${area}`;
     case "draw": return `Outlining ${hoodName(area)}`;
-    case "listings": return `${hoodListingCount(area)} listings in ${hoodName(area)}`;
-    case "dashboard": return `${hoodName(area)} insights`;
+    case "market": return `Market overview · ${hoodName(area)}`;
+    case "pricing": return `Pricing intelligence · ${hoodName(area)}`;
   }
 }
 
@@ -492,8 +528,8 @@ export default function HeroSequence({
     { id: "map", label: "Scan" },
     { id: "zoom", label: "Zoom" },
     { id: "draw", label: "Draw" },
-    { id: "listings", label: "Listings" },
-    { id: "dashboard", label: "Dashboard" },
+    { id: "market", label: "Market" },
+    { id: "pricing", label: "Pricing" },
   ];
   const activeStep = steps.findIndex((s) => s.id === stage);
 
@@ -502,15 +538,15 @@ export default function HeroSequence({
       <div
         className="rounded-2xl overflow-hidden border"
         style={{
-          borderColor: "#D0D9C6",
-          boxShadow: "0 18px 50px -20px rgba(20,30,15,0.35)",
+          borderColor: "rgba(255,255,255,0.09)",
+          boxShadow: "0 18px 50px -20px rgba(0,0,0,0.5)",
           isolation: "isolate",
         }}
       >
         {/* Chrome bar */}
         <div
           className="flex items-center gap-2 px-4 h-9 border-b"
-          style={{ background: "#F2F5EE", borderColor: "#D0D9C6" }}
+          style={{ background: "#141910", borderColor: "rgba(255,255,255,0.09)" }}
         >
           <div className="flex gap-1.5">
             {["#E0786B", "#E4C06A", "#7DBE6B"].map((c) => (
@@ -520,12 +556,12 @@ export default function HeroSequence({
           <div className="flex-1 flex justify-center">
             <span
               className="text-[10px] font-medium px-3 py-0.5 rounded-md"
-              style={{ background: "#FFFFFF", color: "#697264", border: "1px solid #E4EADB" }}
+              style={{ background: "rgba(255,255,255,0.07)", color: "#ADB8A0", border: "1px solid rgba(255,255,255,0.09)" }}
             >
               propsights.app/{slug}
             </span>
           </div>
-          <span className="flex items-center gap-1 text-[9px] font-semibold" style={{ color: "#4A5E3A" }}>
+          <span className="flex items-center gap-1 text-[9px] font-semibold" style={{ color: "#8FCC80" }}>
             <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "#8FCC80" }} />
             LIVE
           </span>
@@ -576,8 +612,12 @@ export default function HeroSequence({
 
           <AnimatePresence mode="wait">
             {stage === "draw" && <DrawOverlay key="draw" area={area} />}
-            {stage === "listings" && <ListingsView key="listings" area={area} />}
-            {stage === "dashboard" && <DashboardView key="dashboard" area={area} />}
+            {stage === "market" && (
+              <DashboardShell key={`market-${area}`} area={area} tab="market" motionKey={`market-${area}`} />
+            )}
+            {stage === "pricing" && (
+              <DashboardShell key={`pricing-${area}`} area={area} tab="pricing" motionKey={`pricing-${area}`} />
+            )}
           </AnimatePresence>
 
           {mapVisible && (
@@ -607,7 +647,7 @@ export default function HeroSequence({
           const done = i <= activeStep;
           return (
             <div key={s.id} className="flex-1 flex flex-col gap-1.5">
-              <div className="h-1 rounded-full overflow-hidden" style={{ background: "#E4EADB" }}>
+              <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
                 <motion.div
                   className="h-full rounded-full"
                   style={{ background: "#4A5E3A" }}
@@ -617,7 +657,7 @@ export default function HeroSequence({
               </div>
               <span
                 className="text-[10px] font-medium transition-colors"
-                style={{ color: i === activeStep ? "#1A2014" : "#9AA690" }}
+                style={{ color: i === activeStep ? "#EAF0DF" : "#828D74" }}
               >
                 {s.label}
               </span>

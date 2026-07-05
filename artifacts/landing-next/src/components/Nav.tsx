@@ -27,6 +27,7 @@ export default function Nav() {
   const links = [
     { label: "Products", href: "#products" },
     { label: "Data", href: "#credibility" },
+    { label: "Dashboard", href: "/dashboard" },
     { label: "Get Access", href: "#access" },
   ];
 

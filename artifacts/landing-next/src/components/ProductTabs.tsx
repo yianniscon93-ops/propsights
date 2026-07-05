@@ -312,6 +312,15 @@ export default function ProductTabs() {
               <p className="text-base leading-relaxed mb-8" style={{ color: "#697264", fontWeight: 300 }}>
                 {tab.body}
               </p>
+              {tab.id === "dashboard" && (
+                <a
+                  href="/dashboard"
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold mb-4 transition-all hover:opacity-90"
+                  style={{ background: "#4A5E3A", color: "#FFFFFF" }}
+                >
+                  Try the market comparison tool <ArrowRight size={14} />
+                </a>
+              )}
               <a
                 href="#access"
                 className="inline-flex items-center gap-2 text-sm font-semibold transition-all hover:gap-3"
