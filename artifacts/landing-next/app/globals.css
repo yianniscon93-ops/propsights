@@ -108,3 +108,42 @@
   .ps-pin-active { animation: none; }
   .cursor-blink { animation: none; }
 }
+
+/* ── Dashboard glassmorphism ────────────────────────────────── */
+/* Dark glass floats over the light map; card glass sits on the dark page. */
+.glass-dark {
+  background: rgba(14, 19, 11, 0.78);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 8px 32px rgba(6, 10, 4, 0.35);
+}
+.glass-card {
+  background: linear-gradient(160deg, rgba(255,255,255,0.055), rgba(255,255,255,0.02));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.glass-light {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  border: 1px solid rgba(208, 217, 198, 0.9);
+}
+
+.dash-bg {
+  background:
+    radial-gradient(52rem 30rem at 85% -5%, rgba(143, 204, 128, 0.05), transparent 60%),
+    radial-gradient(40rem 26rem at -10% 40%, rgba(107, 123, 79, 0.07), transparent 60%),
+    #0C100A;
+}
+
+.leaflet-container.ps-drawing,
+.leaflet-container.ps-drawing .leaflet-interactive {
+  cursor: crosshair !important;
+}
+
+/* thin scrollbars for the glass filter panel */
+.ps-scroll::-webkit-scrollbar { width: 5px; }
+.ps-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 3px; }
+.ps-scroll::-webkit-scrollbar-track { background: transparent; }
