@@ -6,6 +6,7 @@ import type {
   ListingDetail,
   PointRow,
   PolygonCoords,
+  PricingData,
   SelectionStats,
   WeeklyPoint,
 } from "@/lib/dashboard/types";
@@ -138,7 +139,8 @@ export function getSummary(): Promise<DashboardSummary> {
         FROM sync_meta WHERE id = 1
       `;
       const areas = await sql`
-        SELECT area AS slug, COUNT(*)::int AS count
+        SELECT area AS slug, COUNT(*)::int AS count,
+               AVG(latitude)::float AS lat, AVG(longitude)::float AS lng
         FROM str_listings WHERE area IS NOT NULL
         GROUP BY area ORDER BY count DESC
       `;
@@ -146,7 +148,7 @@ export function getSummary(): Promise<DashboardSummary> {
       return {
         source: "live" as const,
         totalListings: tot.n,
-        areas: areas.map((a) => ({ slug: a.slug, count: a.count })),
+        areas: areas.map((a) => ({ slug: a.slug, count: a.count, lat: a.lat, lng: a.lng })),
         todateStart: meta?.todate_start ?? "",
         todateEnd: meta?.todate_end ?? "",
         fwdEnd: meta?.fwd_end ?? "",
@@ -198,6 +200,62 @@ export function getListing(id: string): Promise<ListingDetail | null> {
   );
 }
 
+export function getPricing(f: Filters, polygon: PolygonCoords | null): Promise<PricingData> {
+  return tryLive<PricingData>(
+    async (sql) => {
+      const where = buildWhere(sql, f, polygon);
+      const inSelection = sql`listing_id IN (SELECT listing_id FROM str_listings WHERE ${where})`;
+
+      const curve = await sql`
+        SELECT
+          calendar_date::text AS date,
+          percentile_cont(0.5) WITHIN GROUP (ORDER BY price_per_night)::float AS median_price,
+          COUNT(DISTINCT listing_id)::int AS listings
+        FROM pricing_calendar
+        WHERE calendar_date >= CURRENT_DATE AND ${inSelection}
+        GROUP BY calendar_date ORDER BY calendar_date ASC
+      `;
+
+      const dist = await sql`
+        SELECT (LEAST(FLOOR(avg_nightly_rate / 25), 20) * 25)::int AS bin_start,
+               COUNT(*)::int AS count
+        FROM str_listings
+        WHERE avg_nightly_rate IS NOT NULL AND (${where})
+        GROUP BY 1 ORDER BY 1 ASC
+      `;
+
+      const byMonth = await sql`
+        SELECT to_char(calendar_date, 'YYYY-MM') AS month,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY price_per_night)::float AS median_price
+        FROM pricing_calendar
+        WHERE calendar_date >= CURRENT_DATE AND ${inSelection}
+        GROUP BY 1 ORDER BY 1 ASC
+      `;
+
+      // The pricing calendar mixes full-coverage and partial sample dates;
+      // partial dates skew the median, so keep only well-covered ones.
+      const maxCoverage = Math.max(...curve.map((c) => c.listings as number), 0);
+      const covered = curve.filter((c) => c.listings >= maxCoverage * 0.6);
+
+      return {
+        source: "live",
+        forwardCurve: covered.map((c) => ({
+          date: c.date,
+          medianPrice: c.median_price != null ? Math.round(c.median_price) : null,
+          listings: c.listings,
+        })),
+        distribution: dist.map((d) => ({ binStart: d.bin_start, count: d.count })),
+        byMonth: byMonth.map((m) => ({
+          month: m.month,
+          medianPrice: m.median_price != null ? Math.round(m.median_price) : null,
+        })),
+      };
+    },
+    () => demo.pricing(f, polygon),
+    "pricing"
+  );
+}
+
 export function getStats(f: Filters, polygon: PolygonCoords | null): Promise<SelectionStats> {
   return tryLive<SelectionStats>(
     async (sql) => {
@@ -222,6 +280,8 @@ export function getStats(f: Filters, polygon: PolygonCoords | null): Promise<Sel
         GROUP BY 1 ORDER BY count DESC
       `;
 
+      // Weekly tables extend into future (booking-pace) weeks — clip the
+      // realized trend to weeks fully covered by the availability data.
       const weekly = await sql`
         SELECT
           week_start::text,
@@ -230,13 +290,16 @@ export function getStats(f: Filters, polygon: PolygonCoords | null): Promise<Sel
           percentile_cont(0.5) WITHIN GROUP (ORDER BY avg_price)::float AS median_adr,
           COUNT(*)::int AS listing_count
         FROM str_listings_weekly
-        WHERE listing_id IN (SELECT listing_id FROM str_listings WHERE ${where})
+        WHERE week_start + 6 <= (SELECT todate_end FROM sync_meta WHERE id = 1)
+          AND listing_id IN (SELECT listing_id FROM str_listings WHERE ${where})
         GROUP BY week_start ORDER BY week_start ASC
       `;
 
+      // Quality floor keeps low-coverage 100%-occupancy artifacts out of "top".
       const top = await sql`
         SELECT ${DETAIL_COLUMNS(sql)}
-        FROM str_listings WHERE ${where}
+        FROM str_listings
+        WHERE (${where}) AND avg_nightly_rate IS NOT NULL AND coverage_days >= 30
         ORDER BY eff_occ_todate DESC NULLS LAST
         LIMIT 8
       `;

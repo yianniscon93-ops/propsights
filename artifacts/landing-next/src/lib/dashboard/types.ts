@@ -70,10 +70,24 @@ export interface SelectionStats {
   topListings: ListingDetail[];
 }
 
+export interface PricingData {
+  source: "live" | "demo";
+  /**
+   * Median nightly price by future calendar date. The live pricing
+   * calendar is sampled (2–3 dates/week, ~6 months deep), so points are
+   * not daily.
+   */
+  forwardCurve: Array<{ date: string; medianPrice: number | null; listings: number }>;
+  /** Nightly-rate histogram in €25 bins; the last bin aggregates 500+. */
+  distribution: Array<{ binStart: number; count: number }>;
+  /** Median forward price by calendar month ("2026-07"). */
+  byMonth: Array<{ month: string; medianPrice: number | null }>;
+}
+
 export interface DashboardSummary {
   source: "live" | "demo";
   totalListings: number;
-  areas: Array<{ slug: string; count: number }>;
+  areas: Array<{ slug: string; count: number; lat: number; lng: number }>;
   todateStart: string;
   todateEnd: string;
   fwdEnd: string;
@@ -82,3 +96,9 @@ export interface DashboardSummary {
 
 /** [lat, lng] vertices of a drawn polygon (unclosed; ≥ 3 points). */
 export type PolygonCoords = Array<[number, number]>;
+
+/** One active selection scopes the map focus and every tab below it. */
+export type Selection =
+  | { kind: "all" }
+  | { kind: "area"; slugs: string[]; label: string; lat: number; lng: number; zoom: number }
+  | { kind: "polygon"; coords: PolygonCoords };

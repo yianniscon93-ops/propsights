@@ -2,16 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, SlidersHorizontal, X } from "lucide-react";
-import type { DashboardSummary } from "@/lib/dashboard/types";
 import { AMENITIES, countActive, DEFAULT_FILTERS, type Filters } from "@/lib/dashboard/filters";
 import { TYPE_GROUP_LABELS, type TypeGroup } from "@/lib/dashboard/format";
-import { groupAreas } from "@/lib/dashboard/areas";
 import { UI } from "./tokens";
 
 function Chip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
     <span
-      className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-[10px] font-semibold"
+      className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-[11px] font-semibold"
       style={{ background: UI.olive, color: "#FFFFFF" }}
     >
       {label}
@@ -40,18 +38,15 @@ function Section({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="border-t pt-3 mt-3" style={{ borderColor: UI.border }}>
-      <button
-        className="w-full flex items-center justify-between"
-        onClick={() => setOpen(!open)}
-      >
+      <button className="w-full flex items-center justify-between" onClick={() => setOpen(!open)}>
         <span
-          className="text-[10px] font-bold uppercase tracking-[0.14em] flex items-center gap-1.5"
+          className="text-[11px] font-bold uppercase tracking-[0.14em] flex items-center gap-1.5"
           style={{ color: UI.text }}
         >
           {title}
           {badge != null && badge > 0 && (
             <span
-              className="w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center"
+              className="w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center"
               style={{ background: UI.green, color: UI.bg }}
             >
               {badge}
@@ -59,7 +54,7 @@ function Section({
           )}
         </span>
         <ChevronDown
-          size={13}
+          size={14}
           style={{
             color: UI.muted,
             transform: open ? "rotate(180deg)" : "none",
@@ -75,40 +70,33 @@ function Section({
 function Check({
   checked,
   label,
-  sub,
   onChange,
 }: {
   checked: boolean;
   label: string;
-  sub?: string;
   onChange: () => void;
 }) {
   return (
-    <button onClick={onChange} className="w-full flex items-center gap-2 py-1 group text-left">
+    <button onClick={onChange} className="w-full flex items-center gap-2.5 py-1.5 group text-left">
       <span
-        className="w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 transition-colors"
+        className="w-4 h-4 rounded flex items-center justify-center shrink-0 transition-colors"
         style={{
           background: checked ? UI.green : "transparent",
-          border: `1px solid ${checked ? UI.green : "rgba(255,255,255,0.25)"}`,
+          border: `1px solid ${checked ? UI.green : "rgba(255,255,255,0.3)"}`,
         }}
       >
         {checked && (
-          <svg width="8" height="8" viewBox="0 0 8 8">
+          <svg width="9" height="9" viewBox="0 0 8 8">
             <path d="M1 4 L3 6 L7 1.5" stroke={UI.bg} strokeWidth="1.6" fill="none" strokeLinecap="round" />
           </svg>
         )}
       </span>
       <span
-        className="text-[11px] flex-1 truncate transition-colors group-hover:text-white"
+        className="text-[13px] flex-1 truncate transition-colors group-hover:text-white"
         style={{ color: checked ? UI.text : UI.muted }}
       >
         {label}
       </span>
-      {sub && (
-        <span className="text-[9px] shrink-0" style={{ color: UI.faint }}>
-          {sub}
-        </span>
-      )}
     </button>
   );
 }
@@ -119,25 +107,18 @@ const toggle = <T,>(arr: T[], v: T): T[] =>
 export default function FilterPanel({
   filters,
   onChange,
-  summary,
   resultCount,
 }: {
   filters: Filters;
   onChange: (f: Filters) => void;
-  summary: DashboardSummary | null;
   resultCount: number | null;
 }) {
   const [advanced, setAdvanced] = useState(false);
-  const [expandedParents, setExpandedParents] = useState<string[]>([]);
-
-  const areaGroups = useMemo(() => groupAreas(summary?.areas ?? []), [summary]);
   const active = countActive(filters);
 
   const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
 
   const chips: Array<{ label: string; clear: () => void }> = [];
-  if (filters.areas.length)
-    chips.push({ label: `${filters.areas.length} area${filters.areas.length > 1 ? "s" : ""}`, clear: () => set({ areas: [] }) });
   for (const t of filters.types)
     chips.push({ label: TYPE_GROUP_LABELS[t], clear: () => set({ types: toggle(filters.types, t) }) });
   if (filters.minBeds > 0) chips.push({ label: `${filters.minBeds}+ beds`, clear: () => set({ minBeds: 0 }) });
@@ -172,13 +153,13 @@ export default function FilterPanel({
       {/* Header */}
       <div className="flex items-center justify-between">
         <span
-          className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em]"
+          className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em]"
           style={{ color: UI.text }}
         >
-          <SlidersHorizontal size={13} style={{ color: UI.green }} />
+          <SlidersHorizontal size={14} style={{ color: UI.green }} />
           Filter
         </span>
-        <span className="text-[10px] font-semibold" style={{ color: UI.muted }}>
+        <span className="text-xs font-semibold" style={{ color: UI.muted }}>
           {resultCount != null ? `${resultCount.toLocaleString("en-GB")} results` : "…"}
         </span>
       </div>
@@ -187,11 +168,11 @@ export default function FilterPanel({
       {active > 0 && (
         <div className="mt-3">
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px]" style={{ color: UI.muted }}>
+            <span className="text-[11px]" style={{ color: UI.muted }}>
               Active filters
             </span>
             <button
-              className="text-[10px] font-semibold hover:underline"
+              className="text-[11px] font-semibold hover:underline"
               style={{ color: UI.green }}
               onClick={() => onChange({ ...DEFAULT_FILTERS })}
             >
@@ -205,65 +186,6 @@ export default function FilterPanel({
           </div>
         </div>
       )}
-
-      {/* Areas */}
-      <Section title="Area" badge={filters.areas.length}>
-        <div className="flex flex-col">
-          {areaGroups.map((g) => {
-            const childSlugs = g.children.map((c) => c.slug);
-            const selectedCount = childSlugs.filter((s) => filters.areas.includes(s)).length;
-            const allSelected = selectedCount === childSlugs.length && childSlugs.length > 0;
-            const expanded = expandedParents.includes(g.parent);
-            return (
-              <div key={g.parent}>
-                <div className="flex items-center">
-                  <div className="flex-1">
-                    <Check
-                      checked={allSelected || (childSlugs.length === 1 && selectedCount === 1)}
-                      label={g.parent}
-                      sub={g.count.toLocaleString("en-GB")}
-                      onChange={() =>
-                        set({
-                          areas: allSelected || selectedCount > 0
-                            ? filters.areas.filter((s) => !childSlugs.includes(s))
-                            : [...filters.areas, ...childSlugs],
-                        })
-                      }
-                    />
-                  </div>
-                  {g.children.length > 1 && (
-                    <button
-                      onClick={() => setExpandedParents((e) => toggle(e, g.parent))}
-                      className="p-1"
-                      aria-label={`Expand ${g.parent}`}
-                    >
-                      <ChevronDown
-                        size={11}
-                        style={{
-                          color: UI.faint,
-                          transform: expanded ? "rotate(180deg)" : "none",
-                          transition: "transform 0.2s",
-                        }}
-                      />
-                    </button>
-                  )}
-                </div>
-                {expanded &&
-                  g.children.map((c) => (
-                    <div key={c.slug} className="pl-5">
-                      <Check
-                        checked={filters.areas.includes(c.slug)}
-                        label={c.label}
-                        sub={c.count.toLocaleString("en-GB")}
-                        onChange={() => set({ areas: toggle(filters.areas, c.slug) })}
-                      />
-                    </div>
-                  ))}
-              </div>
-            );
-          })}
-        </div>
-      </Section>
 
       {/* Property type */}
       <Section title="Property type" badge={filters.types.length}>
@@ -286,11 +208,11 @@ export default function FilterPanel({
               <button
                 key={n}
                 onClick={() => set({ minBeds: n })}
-                className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors"
+                className="flex-1 py-2 rounded-lg text-xs font-semibold transition-colors"
                 style={
                   activeBed
                     ? { background: UI.olive, color: "#FFFFFF" }
-                    : { background: "rgba(255,255,255,0.05)", color: UI.muted }
+                    : { background: "rgba(255,255,255,0.06)", color: UI.muted }
                 }
               >
                 {n === 0 ? "Any" : `${n}+`}
@@ -304,9 +226,14 @@ export default function FilterPanel({
       <Section title="Nightly rate">
         <div className="flex items-center gap-2">
           {(["priceMin", "priceMax"] as const).map((k, i) => (
-            <div key={k} className="flex-1 flex items-center gap-1 rounded-lg px-2 py-1.5"
-              style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${UI.border}` }}>
-              <span className="text-[10px]" style={{ color: UI.faint }}>€</span>
+            <div
+              key={k}
+              className="flex-1 flex items-center gap-1 rounded-lg px-2.5 py-2"
+              style={{ background: "rgba(255,255,255,0.06)", border: `1px solid ${UI.border}` }}
+            >
+              <span className="text-xs" style={{ color: UI.faint }}>
+                €
+              </span>
               <input
                 type="number"
                 min={0}
@@ -315,7 +242,7 @@ export default function FilterPanel({
                 onChange={(e) =>
                   set({ [k]: e.target.value === "" ? null : Math.max(0, Number(e.target.value)) })
                 }
-                className="w-full bg-transparent outline-none text-[11px]"
+                className="w-full bg-transparent outline-none text-[13px]"
                 style={{ color: UI.text }}
               />
             </div>
@@ -329,11 +256,11 @@ export default function FilterPanel({
           onClick={() => setAdvanced(!advanced)}
           className="w-full flex items-center justify-between py-1"
         >
-          <span className="text-[11px] font-bold" style={{ color: UI.green }}>
+          <span className="text-[13px] font-bold" style={{ color: UI.green }}>
             Advanced filters
           </span>
           <ChevronDown
-            size={13}
+            size={14}
             style={{
               color: UI.green,
               transform: advanced ? "rotate(180deg)" : "none",
@@ -360,7 +287,7 @@ export default function FilterPanel({
               onChange={() => set({ entireOnly: !filters.entireOnly })}
             />
 
-            <p className="text-[10px] font-bold uppercase tracking-wider mt-3 mb-1" style={{ color: UI.muted }}>
+            <p className="text-[11px] font-bold uppercase tracking-wider mt-3 mb-1.5" style={{ color: UI.text }}>
               Minimum rating
             </p>
             <div className="flex gap-1.5">
@@ -370,8 +297,8 @@ export default function FilterPanel({
                   <button
                     key={r}
                     onClick={() => set({ minRating: on ? null : r })}
-                    className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors"
-                    style={on ? { background: UI.olive, color: "#FFF" } : { background: "rgba(255,255,255,0.05)", color: UI.muted }}
+                    className="flex-1 py-2 rounded-lg text-xs font-semibold transition-colors"
+                    style={on ? { background: UI.olive, color: "#FFF" } : { background: "rgba(255,255,255,0.06)", color: UI.muted }}
                   >
                     ★ {r}+
                   </button>
@@ -379,7 +306,7 @@ export default function FilterPanel({
               })}
             </div>
 
-            <p className="text-[10px] font-bold uppercase tracking-wider mt-3 mb-1" style={{ color: UI.muted }}>
+            <p className="text-[11px] font-bold uppercase tracking-wider mt-3 mb-1.5" style={{ color: UI.text }}>
               Beach within
             </p>
             <div className="flex gap-1.5">
@@ -389,8 +316,8 @@ export default function FilterPanel({
                   <button
                     key={m}
                     onClick={() => set({ beachMax: on ? null : m })}
-                    className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors"
-                    style={on ? { background: UI.olive, color: "#FFF" } : { background: "rgba(255,255,255,0.05)", color: UI.muted }}
+                    className="flex-1 py-2 rounded-lg text-xs font-semibold transition-colors"
+                    style={on ? { background: UI.olive, color: "#FFF" } : { background: "rgba(255,255,255,0.06)", color: UI.muted }}
                   >
                     {m} min
                   </button>
@@ -400,7 +327,7 @@ export default function FilterPanel({
 
             {amenityGroups.map(([group, items]) => (
               <div key={group}>
-                <p className="text-[10px] font-bold uppercase tracking-wider mt-3 mb-1" style={{ color: UI.muted }}>
+                <p className="text-[11px] font-bold uppercase tracking-wider mt-3 mb-1" style={{ color: UI.text }}>
                   {group}
                 </p>
                 {items.map((a) => (

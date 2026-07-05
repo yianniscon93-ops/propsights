@@ -4,6 +4,7 @@ import type {
   ListingDetail,
   PointRow,
   PolygonCoords,
+  PricingData,
   SelectionStats,
   WeeklyPoint,
 } from "@/lib/dashboard/types";
@@ -184,12 +185,20 @@ function build(): DemoStore {
 
   const areaCounts = new Map<string, number>();
   for (const l of listings) areaCounts.set(l.areaSlug, (areaCounts.get(l.areaSlug) ?? 0) + 1);
+  const areaCenters = new Map(
+    Object.entries(AREA_DATA).map(([name, base]) => [slugify(name), base])
+  );
 
   const summary: DashboardSummary = {
     source: "demo",
     totalListings: listings.length,
     areas: [...areaCounts.entries()]
-      .map(([slug, count]) => ({ slug, count }))
+      .map(([slug, count]) => ({
+        slug,
+        count,
+        lat: areaCenters.get(slug)?.lat ?? 34.98,
+        lng: areaCenters.get(slug)?.lng ?? 33.25,
+      }))
       .sort((a, b) => b.count - a.count),
     todateStart: TODATE_START,
     todateEnd: isoDate(yesterday),
@@ -300,6 +309,49 @@ function aggregate(rows: ListingDetail[]): SelectionStats {
   };
 }
 
+function pricingFor(rows: ListingDetail[]): PricingData {
+  const rates = rows
+    .map((l) => l.nightlyRate)
+    .filter((v): v is number => v != null)
+    .sort((a, b) => a - b);
+  const median = rates.length ? rates[Math.floor(rates.length / 2)] : null;
+
+  // Mirror the live pricing calendar: sampled ~2 dates/week, ~6 months deep.
+  const forwardCurve: PricingData["forwardCurve"] = [];
+  const monthAcc = new Map<string, number[]>();
+  if (median != null) {
+    const start = new Date();
+    const jitter = mulberry32(rates.length || 1);
+    for (let d = 0; d < 180; d += 3) {
+      const day = new Date(start.getTime() + d * 86400000);
+      const season = SEASON[day.getUTCMonth()];
+      const price = Math.round(median * season * (0.98 + jitter() * 0.05));
+      forwardCurve.push({ date: isoDate(day), medianPrice: price, listings: rows.length });
+      const month = isoDate(day).slice(0, 7);
+      if (!monthAcc.has(month)) monthAcc.set(month, []);
+      monthAcc.get(month)!.push(price);
+    }
+  }
+
+  const bins = new Map<number, number>();
+  for (const r of rates) {
+    const bin = Math.min(Math.floor(r / 25), 20) * 25;
+    bins.set(bin, (bins.get(bin) ?? 0) + 1);
+  }
+  const distribution = [...bins.entries()]
+    .map(([binStart, count]) => ({ binStart, count }))
+    .sort((a, b) => a.binStart - b.binStart);
+
+  const byMonth = [...monthAcc.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([month, vals]) => ({
+      month,
+      medianPrice: Math.round(vals.reduce((s, v) => s + v, 0) / vals.length),
+    }));
+
+  return { source: "demo", forwardCurve, distribution, byMonth };
+}
+
 export const demo = {
   summary: (): DashboardSummary => getStore().summary,
   points: (f: Filters): PointRow[] =>
@@ -315,4 +367,6 @@ export const demo = {
   listing: (id: string): ListingDetail | null => getStore().byId.get(id) ?? null,
   stats: (f: Filters, polygon: PolygonCoords | null): SelectionStats =>
     aggregate(select(f, polygon)),
+  pricing: (f: Filters, polygon: PolygonCoords | null): PricingData =>
+    pricingFor(select(f, polygon)),
 };

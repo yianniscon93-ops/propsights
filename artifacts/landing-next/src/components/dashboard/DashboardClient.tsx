@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { AnimatePresence } from "framer-motion";
-import { PenLine, SlidersHorizontal, X } from "lucide-react";
+import { BarChart3, Hexagon, LineChart, PenLine, Plus, SlidersHorizontal, X } from "lucide-react";
 import { BRAND } from "@/lib/brand";
 import type {
   DashboardSummary,
@@ -13,26 +13,32 @@ import type {
   OccWindow,
   PointRow,
   PolygonCoords,
+  PricingData,
+  Selection,
   SelectionStats,
 } from "@/lib/dashboard/types";
 import { DEFAULT_FILTERS, encodeFilters, type Filters } from "@/lib/dashboard/filters";
-import { fmtDate } from "@/lib/dashboard/format";
+import { fmtDate, fmtInt } from "@/lib/dashboard/format";
 import { UI } from "./tokens";
 import FilterPanel from "./FilterPanel";
-import StatsSection from "./StatsSection";
+import SearchBar from "./SearchBar";
+import MarketTab from "./MarketTab";
+import PricingTab from "./PricingTab";
 import HoverCard from "./HoverCard";
 
 const MarketMap = dynamic(() => import("./MarketMap"), {
   ssr: false,
   loading: () => (
     <div
-      className="w-full h-full flex items-center justify-center text-xs"
+      className="w-full h-full flex items-center justify-center text-sm"
       style={{ background: "#E8EDE3", color: "#697264" }}
     >
       Loading map…
     </div>
   ),
 });
+
+type TabId = "market" | "pricing";
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -43,24 +49,65 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex rounded-lg p-0.5 gap-0.5 glass-card">
+      {options.map((o) => {
+        const active = o.value === value;
+        return (
+          <button
+            key={o.value}
+            onClick={() => onChange(o.value)}
+            className="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap"
+            style={
+              active
+                ? { background: UI.olive, color: "#FFFFFF" }
+                : { background: "transparent", color: UI.muted }
+            }
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function DashboardClient() {
   const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS });
+  const [selection, setSelection] = useState<Selection>({ kind: "all" });
   const [metric, setMetric] = useState<OccMetric>("eff");
   const [window_, setWindow] = useState<OccWindow>("todate");
-  const [polygon, setPolygon] = useState<PolygonCoords | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [mobileFilters, setMobileFilters] = useState(false);
+  const [tab, setTab] = useState<TabId>("market");
 
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [points, setPoints] = useState<PointRow[] | null>(null);
   const [stats, setStats] = useState<SelectionStats | null>(null);
+  const [pricing, setPricing] = useState<PricingData | null>(null);
 
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ListingDetail | null>(null);
   const detailCache = useRef(new Map<string, ListingDetail>());
 
-  const filtersKey = useMemo(() => encodeFilters(filters), [filters]);
+  // The active selection scopes everything: area slugs merge into the
+  // filters; a drawn polygon rides along in POST bodies.
+  const effectiveFilters = useMemo<Filters>(
+    () => ({ ...filters, areas: selection.kind === "area" ? selection.slugs : [] }),
+    [filters, selection]
+  );
+  const polygon = selection.kind === "polygon" ? selection.coords : null;
+  const filtersKey = useMemo(() => encodeFilters(effectiveFilters), [effectiveFilters]);
   const debouncedFilters = useDebounced(filtersKey, 300);
 
   useEffect(() => {
@@ -94,6 +141,28 @@ export default function DashboardClient() {
     return () => ctrl.abort();
   }, [debouncedFilters, polygon]);
 
+  // Pricing data only when the pricing tab is (or has been) open.
+  const [pricingWanted, setPricingWanted] = useState(false);
+  useEffect(() => {
+    if (tab === "pricing") setPricingWanted(true);
+  }, [tab]);
+  useEffect(() => {
+    if (!pricingWanted) return;
+    const ctrl = new AbortController();
+    const params = Object.fromEntries(new URLSearchParams(debouncedFilters));
+    setPricing(null);
+    fetch("/api/dashboard/pricing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ polygon, filters: params }),
+      signal: ctrl.signal,
+    })
+      .then((r) => r.json())
+      .then(setPricing)
+      .catch((e: Error) => e.name !== "AbortError" && console.error(e));
+    return () => ctrl.abort();
+  }, [debouncedFilters, polygon, pricingWanted]);
+
   // Hovered/pinned listing detail (with a small cache).
   const activeId = pinnedId ?? hoverId;
   useEffect(() => {
@@ -124,21 +193,35 @@ export default function DashboardClient() {
     };
   }, [activeId]);
 
-  // Stable callbacks — PointsLayer rebuilds its 15k-dot canvas when these change.
+  // Stable callbacks — PointsLayer rebuilds its canvas when these change.
   const handleHover = useCallback((id: string | null) => setHoverId(id), []);
   const handlePick = useCallback((id: string) => setPinnedId((p) => (p === id ? null : id)), []);
   const handlePolygonComplete = useCallback((poly: PolygonCoords) => {
-    setPolygon(poly);
+    setSelection({ kind: "polygon", coords: poly });
     setDrawing(false);
   }, []);
   const handleDrawCancel = useCallback(() => setDrawing(false), []);
+
+  const focus = selection.kind === "area" ? { lat: selection.lat, lng: selection.lng, zoom: selection.zoom } : null;
+
+  const selectionLabel =
+    selection.kind === "all"
+      ? "All of Cyprus"
+      : selection.kind === "area"
+        ? selection.label
+        : "Drawn area";
+
+  const tabs: Array<{ id: TabId; label: string; icon: React.ReactNode }> = [
+    { id: "market", label: "Market overview", icon: <BarChart3 size={14} /> },
+    { id: "pricing", label: "Pricing", icon: <LineChart size={14} /> },
+  ];
 
   return (
     <div className="min-h-screen dash-bg" style={{ color: UI.text }}>
       {/* Top bar */}
       <header
-        className="sticky top-0 z-40 h-14 flex items-center justify-between px-4 md:px-6 glass-dark border-x-0 border-t-0"
-        style={{ borderRadius: 0 }}
+        className="sticky top-0 z-40 h-14 flex items-center justify-between px-4 md:px-6 glass-dark"
+        style={{ borderRadius: 0, borderLeft: "none", borderRight: "none", borderTop: "none" }}
       >
         <div className="flex items-center gap-3 min-w-0">
           <Link href="/" className="flex items-center gap-2.5 shrink-0">
@@ -161,13 +244,13 @@ export default function DashboardClient() {
 
         <div className="flex items-center gap-3">
           {summary && (
-            <span className="text-[11px] hidden md:inline" style={{ color: UI.muted }}>
+            <span className="text-xs hidden md:inline" style={{ color: UI.muted }}>
               Data through {fmtDate(summary.todateEnd)}
             </span>
           )}
           {summary && (
             <span
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide"
               style={
                 summary.source === "live"
                   ? { background: "rgba(143,204,128,0.12)", color: UI.green }
@@ -186,9 +269,9 @@ export default function DashboardClient() {
 
       {/* Map hero */}
       <section
-        className="relative m-3 md:m-4 rounded-3xl overflow-hidden"
+        className="relative m-3 md:m-4 mb-0 rounded-3xl overflow-hidden"
         style={{
-          height: "min(68vh, 760px)",
+          height: "min(64vh, 720px)",
           minHeight: 440,
           border: `1px solid ${UI.border}`,
           isolation: "isolate",
@@ -200,31 +283,58 @@ export default function DashboardClient() {
           window_={window_}
           drawing={drawing}
           polygon={polygon}
+          focus={focus}
           onHover={handleHover}
           onPick={handlePick}
           onPolygonComplete={handlePolygonComplete}
           onDrawCancel={handleDrawCancel}
         />
 
-        {/* Floating filter panel (desktop) */}
-        <div
-          className="hidden lg:block absolute left-3 top-3 bottom-3 w-[280px] z-[900] glass-dark rounded-2xl overflow-y-auto ps-scroll"
-        >
-          <FilterPanel
-            filters={filters}
-            onChange={setFilters}
-            summary={summary}
-            resultCount={points?.length ?? null}
-          />
+        {/* Search + draw toolbar (top-centre) */}
+        <div className="absolute left-1/2 -translate-x-1/2 top-3 z-[950] flex items-center gap-2">
+          <SearchBar summary={summary} selection={selection} onSelect={setSelection} />
+          {!drawing ? (
+            <button
+              onClick={() => {
+                setDrawing(true);
+                setPinnedId(null);
+              }}
+              className="glass-dark rounded-xl px-4 h-11 flex items-center gap-2 text-sm font-semibold transition-transform hover:scale-[1.03] active:scale-95 whitespace-nowrap"
+              style={{ color: UI.text }}
+            >
+              <PenLine size={14} style={{ color: UI.green }} />
+              {polygon ? "Redraw" : "Draw area"}
+            </button>
+          ) : (
+            <button
+              onClick={handleDrawCancel}
+              className="glass-dark rounded-xl px-4 h-11 flex items-center gap-2 text-sm font-semibold whitespace-nowrap"
+              style={{ color: UI.oliveLight }}
+            >
+              <X size={14} /> Cancel
+            </button>
+          )}
+        </div>
+        {drawing && (
+          <div className="absolute left-1/2 -translate-x-1/2 top-16 z-[940]">
+            <span className="glass-dark rounded-xl px-3.5 py-2 text-xs font-medium whitespace-nowrap" style={{ color: UI.text }}>
+              Click to add points · double-click or ⏎ to finish · Esc to cancel
+            </span>
+          </div>
+        )}
+
+        {/* Floating filter panel (desktop) — hugs content, scrolls when tall */}
+        <div className="hidden lg:block absolute left-3 top-3 w-[280px] max-h-[calc(100%-1.5rem)] z-[900] glass-dark rounded-2xl overflow-y-auto ps-scroll">
+          <FilterPanel filters={filters} onChange={setFilters} resultCount={points?.length ?? null} />
         </div>
 
         {/* Mobile filter toggle + drawer */}
         <button
           onClick={() => setMobileFilters(true)}
-          className="lg:hidden absolute left-3 top-3 z-[900] glass-dark rounded-xl px-3 py-2 flex items-center gap-2 text-[11px] font-semibold"
+          className="lg:hidden absolute left-3 top-3 z-[900] glass-dark rounded-xl px-3 h-11 flex items-center gap-2 text-xs font-semibold"
           style={{ color: UI.text }}
         >
-          <SlidersHorizontal size={13} style={{ color: UI.green }} />
+          <SlidersHorizontal size={14} style={{ color: UI.green }} />
           Filters
         </button>
         {mobileFilters && (
@@ -242,59 +352,13 @@ export default function DashboardClient() {
               >
                 <X size={16} style={{ color: UI.muted }} />
               </button>
-              <FilterPanel
-                filters={filters}
-                onChange={setFilters}
-                summary={summary}
-                resultCount={points?.length ?? null}
-              />
+              <FilterPanel filters={filters} onChange={setFilters} resultCount={points?.length ?? null} />
             </div>
           </div>
         )}
 
-        {/* Draw toolbar */}
-        <div className="absolute right-3 top-3 z-[900] flex items-center gap-2">
-          {!drawing && (
-            <button
-              onClick={() => {
-                setDrawing(true);
-                setPolygon(null);
-                setPinnedId(null);
-              }}
-              className="glass-dark rounded-xl px-3.5 py-2 flex items-center gap-2 text-[11px] font-semibold transition-transform hover:scale-[1.03] active:scale-95"
-              style={{ color: UI.text }}
-            >
-              <PenLine size={13} style={{ color: UI.green }} />
-              {polygon ? "Redraw area" : "Draw area"}
-            </button>
-          )}
-          {drawing && (
-            <>
-              <span className="glass-dark rounded-xl px-3 py-2 text-[10px]" style={{ color: UI.muted }}>
-                Click to add points · double-click or ⏎ to finish · Esc to cancel
-              </span>
-              <button
-                onClick={handleDrawCancel}
-                className="glass-dark rounded-xl px-3 py-2 text-[11px] font-semibold"
-                style={{ color: UI.oliveLight }}
-              >
-                Cancel
-              </button>
-            </>
-          )}
-          {!drawing && polygon && (
-            <button
-              onClick={() => setPolygon(null)}
-              className="glass-dark rounded-xl px-3 py-2 flex items-center gap-1.5 text-[11px] font-semibold"
-              style={{ color: UI.muted }}
-            >
-              <X size={12} /> Clear
-            </button>
-          )}
-        </div>
-
         {/* Listing hover/pin card */}
-        <div className="absolute right-3 top-16 z-[950] pointer-events-none">
+        <div className="absolute right-3 top-16 z-[930] pointer-events-none">
           <AnimatePresence>
             {detail && (
               <HoverCard
@@ -310,8 +374,8 @@ export default function DashboardClient() {
         </div>
 
         {/* Occupancy legend */}
-        <div className="absolute left-3 lg:left-[304px] bottom-3 z-[900] glass-light rounded-lg px-2.5 py-2">
-          <p className="text-[9px] font-semibold mb-1" style={{ color: "#697264" }}>
+        <div className="absolute left-3 lg:left-[304px] bottom-3 z-[900] glass-light rounded-lg px-3 py-2">
+          <p className="text-[10px] font-semibold mb-1" style={{ color: "#4C5546" }}>
             Occupancy
           </p>
           <div
@@ -319,22 +383,96 @@ export default function DashboardClient() {
             style={{ background: "linear-gradient(90deg,#D8DECB,#8FA36B,#4A5E3A,#26331C)" }}
           />
           <div className="flex justify-between mt-0.5">
-            <span className="text-[8px]" style={{ color: "#9AA690" }}>40%</span>
-            <span className="text-[8px]" style={{ color: "#9AA690" }}>95%</span>
+            <span className="text-[9px]" style={{ color: "#69725F" }}>40%</span>
+            <span className="text-[9px]" style={{ color: "#69725F" }}>95%</span>
           </div>
         </div>
       </section>
 
-      {/* Stats for current selection */}
-      <StatsSection
-        stats={stats}
-        hasPolygon={polygon != null}
-        metric={metric}
-        window_={window_}
-        onMetric={setMetric}
-        onWindow={setWindow}
-        onClearPolygon={() => setPolygon(null)}
-      />
+      {/* Context bar: selection + metric/window controls */}
+      <div className="px-3 md:px-4 mt-3 flex flex-wrap items-center gap-2.5">
+        <span className="flex items-center gap-2">
+          <Hexagon size={15} style={{ color: UI.green }} />
+          <h2 className="font-display font-bold text-xl uppercase tracking-wide" style={{ color: UI.text }}>
+            {selectionLabel}
+          </h2>
+        </span>
+        {stats && (
+          <span className="text-sm" style={{ color: UI.muted }}>
+            {fmtInt(stats.listingCount)} listings
+          </span>
+        )}
+        {selection.kind !== "all" && (
+          <button
+            onClick={() => setSelection({ kind: "all" })}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-colors hover:bg-white/10"
+            style={{ color: UI.muted, border: `1px solid ${UI.border}` }}
+          >
+            <X size={11} /> Clear selection
+          </button>
+        )}
+        <div className="flex-1" />
+        <Segmented
+          value={metric}
+          onChange={setMetric}
+          options={[
+            { value: "eff", label: "Effective" },
+            { value: "raw", label: "Raw" },
+          ]}
+        />
+        <Segmented
+          value={window_}
+          onChange={setWindow}
+          options={[
+            { value: "todate", label: "Season to date" },
+            { value: "fwd60", label: "Next 60 days" },
+          ]}
+        />
+      </div>
+
+      {/* Tabs */}
+      <div className="px-3 md:px-4 mt-3">
+        <div className="flex items-center gap-1.5 border-b" style={{ borderColor: UI.border }}>
+          {tabs.map((t) => {
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-colors"
+                style={
+                  active
+                    ? {
+                        color: UI.text,
+                        background: "rgba(255,255,255,0.05)",
+                        borderBottom: `2px solid ${UI.green}`,
+                        marginBottom: -1,
+                      }
+                    : { color: UI.muted, borderBottom: "2px solid transparent", marginBottom: -1 }
+                }
+              >
+                <span style={{ color: active ? UI.green : UI.faint }}>{t.icon}</span>
+                {t.label}
+              </button>
+            );
+          })}
+          <span
+            className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium select-none"
+            style={{ color: UI.faint }}
+          >
+            <Plus size={13} /> More soon
+          </span>
+        </div>
+      </div>
+
+      {/* Tab content */}
+      <div className="px-3 md:px-4 py-4 pb-12">
+        {tab === "market" ? (
+          <MarketTab stats={stats} metric={metric} window_={window_} />
+        ) : (
+          <PricingTab pricing={pricing} stats={stats} />
+        )}
+      </div>
     </div>
   );
 }

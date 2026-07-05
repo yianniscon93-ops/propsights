@@ -152,7 +152,13 @@ function DrawLayer({
   );
 }
 
-function FitPolygon({ polygon }: { polygon: PolygonCoords | null }) {
+function FitPolygon({
+  polygon,
+  focus,
+}: {
+  polygon: PolygonCoords | null;
+  focus: { lat: number; lng: number; zoom: number } | null;
+}) {
   const map = useMap();
   useEffect(() => {
     const t = setTimeout(() => map.invalidateSize(), 200);
@@ -166,6 +172,15 @@ function FitPolygon({ polygon }: { polygon: PolygonCoords | null }) {
       });
     }
   }, [map, polygon]);
+  useEffect(() => {
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const target: [number, number] = focus ? [focus.lat, focus.lng] : CYPRUS_CENTER;
+    const zoom = focus ? focus.zoom : CYPRUS_ZOOM;
+    if (reduce) map.setView(target, zoom, { animate: false });
+    else map.flyTo(target, zoom, { duration: 1.1, easeLinearity: 0.25 });
+  }, [map, focus]);
   return null;
 }
 
@@ -175,6 +190,7 @@ export default function MarketMap({
   window_,
   drawing,
   polygon,
+  focus,
   onHover,
   onPick,
   onPolygonComplete,
@@ -185,6 +201,7 @@ export default function MarketMap({
   window_: OccWindow;
   drawing: boolean;
   polygon: PolygonCoords | null;
+  focus: { lat: number; lng: number; zoom: number } | null;
   onHover: (id: string | null) => void;
   onPick: (id: string) => void;
   onPolygonComplete: (poly: PolygonCoords) => void;
@@ -228,7 +245,7 @@ export default function MarketMap({
       )}
 
       {drawing && <DrawLayer onComplete={onPolygonComplete} onCancel={onDrawCancel} />}
-      <FitPolygon polygon={polygon} />
+      <FitPolygon polygon={polygon} focus={focus} />
     </MapContainer>
   );
 }
