@@ -21,7 +21,8 @@
   --ink-surface: #141910;
   --ink-border:  rgba(255,255,255,0.07);
   --ink-text:    #D0DCC0;
-  --ink-muted:   #6E7D62;
+  --ink-muted:   #ADB8A0; /* body copy on dark — ≥7:1 contrast; never lighter than weight 400 */
+  --ink-dim:     #6E7D62; /* decorative/icons only, not reading copy */
   --data-green:  #8FCC80;
 
   /* Light palette */
@@ -29,7 +30,8 @@
   --paper-2:     #F2F5EE;
   --paper-border:#D0D9C6;
   --paper-text:  #1A2014;
-  --paper-muted: #697264;
+  --paper-muted: #4C5546; /* body copy on light */
+  --paper-dim:   #697264; /* decorative/mock-UI details only */
 
   /* Shared olive accent */
   --olive:       #4A5E3A;

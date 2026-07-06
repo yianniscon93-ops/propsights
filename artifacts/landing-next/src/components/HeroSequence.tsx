@@ -1,11 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
-import { PenLine, BarChart3, LineChart, ArrowRight } from "lucide-react";
+import {
+  PenLine,
+  BarChart3,
+  LineChart,
+  Hexagon,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import { AREA_DATA, AREAS } from "@/lib/areaData";
+import type { PointRow, PolygonCoords, PricingData, SelectionStats } from "@/lib/dashboard/types";
+import { fmtEuro, fmtInt, fmtPct, occupancyColor, TYPE_GROUP_LABELS } from "@/lib/dashboard/format";
 
 export type Stage = "map" | "zoom" | "draw" | "market" | "pricing";
 
@@ -13,6 +24,14 @@ const CYPRUS_CENTER: [number, number] = [34.98, 33.25];
 const CYPRUS_ZOOM = 8;
 const AREA_ZOOM = 12;
 const DRAW_ZOOM = 13;
+
+// Scroll geometry: the inner page is map (one viewport) + dashboard panel
+// (0.86 viewport) = 1.86 viewports tall. Scrolling down leaves a 14% sliver
+// of the map visible above the panel — like a real mid-scroll dashboard.
+const PAGE_H = "186%";
+const MAP_H = `${(100 / 186) * 100}%`;
+const DASH_H = `${(86 / 186) * 100}%`;
+const SCROLL_Y = `-${(86 / 186) * 100}%`;
 
 const NEIGHBOURHOODS: Record<string, string> = {
   Limassol: "Tourist Area",
@@ -24,12 +43,6 @@ const NEIGHBOURHOODS: Record<string, string> = {
 };
 function hoodName(area: string) {
   return NEIGHBOURHOODS[area] ?? "Town Centre";
-}
-function hoodListingCount(area: string) {
-  return Math.max(12, Math.round((AREA_DATA[area]?.listings ?? 40) * 0.34));
-}
-function hoodKm2(area: string) {
-  return (0.6 + ((AREA_DATA[area]?.listings ?? 40) % 7) * 0.1).toFixed(1);
 }
 
 function useCountUp(target: number, trigger: unknown) {
@@ -60,6 +73,79 @@ function makeMarkerIcon(active: boolean) {
   });
 }
 
+/** Which areas get a price pill at island zoom — the rest stay small dots
+    so the east coast (Ayia Napa / Protaras / Kokkinochoria) doesn't pile up. */
+const PILL_AREAS = new Set([
+  "Limassol", "Ayia Napa", "Paphos", "Protaras", "Larnaca", "Polis", "Nicosia",
+]);
+// [dx, dy] px nudge for near-neighbour pills that would otherwise overlap.
+const PILL_NUDGE: Record<string, [number, number]> = {
+  Protaras: [12, -28],
+  "Ayia Napa": [18, 26],
+  Larnaca: [-12, -8],
+};
+
+/** Island-level price pill — self-centred via transform so widths can vary. */
+function makePillIcon(area: string, rate: number, active: boolean) {
+  const bg = active ? "#4A5E3A" : "rgba(255,255,255,0.95)";
+  const color = active ? "#FFFFFF" : "#1A2014";
+  const border = active ? "#3B4C2E" : "#D0D9C6";
+  const [nx, ny] = PILL_NUDGE[area] ?? [0, 0];
+  const html =
+    `<span style="display:inline-flex;align-items:center;white-space:nowrap;transform:translate(calc(-50% + ${nx}px),calc(-50% + ${ny}px));` +
+    `padding:3px 9px;border-radius:9999px;background:${bg};color:${color};border:1px solid ${border};` +
+    `font:600 10px/1.3 var(--font-inter),sans-serif;box-shadow:0 3px 10px rgba(20,30,15,0.28);cursor:pointer;">` +
+    `${area} · €${rate}</span>`;
+  return L.divIcon({ html, className: "ps-pin-wrap", iconSize: [0, 0], iconAnchor: [0, 0] });
+}
+
+function dotRadiusForZoom(z: number): number {
+  return z >= 13 ? 4.5 : z >= 11 ? 3 : 2;
+}
+
+/**
+ * Every listing as a canvas dot coloured by occupancy — the same visual as
+ * the real dashboard map, but non-interactive (this is a demo backdrop).
+ */
+function HeroPointsLayer({ points }: { points: PointRow[] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (points.length === 0) return;
+    const renderer = L.canvas({ padding: 0.3 });
+    const group = L.layerGroup();
+    const markers: L.CircleMarker[] = [];
+    const r = dotRadiusForZoom(map.getZoom());
+
+    for (const p of points) {
+      const m = L.circleMarker([p.lat, p.lng], {
+        renderer,
+        radius: r,
+        weight: 0.5,
+        color: "#FFFFFF",
+        fillColor: occupancyColor(p.effOccTodate),
+        fillOpacity: 0.8,
+        interactive: false,
+      });
+      group.addLayer(m);
+      markers.push(m);
+    }
+
+    const onZoom = () => {
+      const nr = dotRadiusForZoom(map.getZoom());
+      for (const m of markers) m.setRadius(nr);
+    };
+    map.on("zoomend", onZoom);
+    group.addTo(map);
+    return () => {
+      map.off("zoomend", onZoom);
+      group.remove();
+    };
+  }, [map, points]);
+
+  return null;
+}
+
 function MapController({ area, stage }: { area: string; stage: Stage }) {
   const map = useMap();
 
@@ -83,23 +169,136 @@ function MapController({ area, stage }: { area: string; stage: Stage }) {
       if (reduce) map.setView([d.lat, d.lng], DRAW_ZOOM, { animate: false });
       else map.flyTo([d.lat, d.lng], DRAW_ZOOM, { duration: 1.4, easeLinearity: 0.25 });
     }
+    // market/pricing: the map holds still while the page scrolls past it.
   }, [area, stage, map]);
 
   return null;
 }
 
-const HOOD_VERTS: [number, number][] = [
+const HOOD_BASE: [number, number][] = [
   [34, 34], [48, 28], [62, 31], [70, 42], [68, 56],
   [58, 66], [44, 68], [34, 58], [30, 46],
 ];
-const HOOD_PATH = "M" + HOOD_VERTS.map(([x, y]) => `${x},${y}`).join(" L") + " Z";
-const DIM_PATH = "M0,0 H100 V100 H0 Z " + HOOD_PATH;
 
-function DrawOverlay({ area }: { area: string }) {
+// Screen-space nudge per town so the demo polygon stays on land — the map
+// centres on the town, but the coastline sits in a different direction in
+// each one (e.g. Polis faces the sea to the north).
+const HOOD_OFFSET: Record<string, [number, number]> = {
+  Limassol: [-2, -12],
+  "Ayia Napa": [-6, -12],
+  Paphos: [8, -8],
+  Protaras: [-10, -6],
+  Larnaca: [-6, -12],
+  Polis: [2, 10],
+};
+
+function hoodVerts(area: string): [number, number][] {
+  const [dx, dy] = HOOD_OFFSET[area] ?? [0, -8];
+  return HOOD_BASE.map(([x, y]) => [x + dx, y + dy]);
+}
+
+function pathOf(verts: [number, number][]): string {
+  return "M" + verts.map(([x, y]) => `${x},${y}`).join(" L") + " Z";
+}
+
+// Draw choreography (seconds from entering the draw stage). The cursor leaves
+// the Draw button, the outline follows it, handles pop as it passes.
+const DRAW_START = 0.5;
+const DRAW_DUR = 2.2;
+const DRAW_END = DRAW_START + DRAW_DUR;
+
+/**
+ * Converts the on-screen demo polygon (percentages of the map container)
+ * into real map coordinates once the draw-stage flyTo settles, so the
+ * dashboard panel can query the production API for exactly that area.
+ */
+function PolygonProbe({
+  stage,
+  area,
+  onPolygon,
+}: {
+  stage: Stage;
+  area: string;
+  onPolygon: (coords: PolygonCoords) => void;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (stage !== "draw") return;
+    let fired = false;
+    const compute = () => {
+      if (fired) return;
+      fired = true;
+      const size = map.getSize();
+      const coords: PolygonCoords = hoodVerts(area).map(([x, y]) => {
+        const ll = map.containerPointToLatLng(
+          L.point((x / 100) * size.x, (y / 100) * size.y)
+        );
+        return [ll.lat, ll.lng];
+      });
+      onPolygon(coords);
+    };
+    map.once("moveend", compute);
+    const t = setTimeout(compute, 1800); // fallback if the view never moves
+    return () => {
+      clearTimeout(t);
+      map.off("moveend", compute);
+    };
+  }, [stage, area, map, onPolygon]);
+
+  return null;
+}
+
+/** Planar shoelace area of a small lat/lng polygon, in km². */
+function polygonKm2(coords: PolygonCoords): string {
+  if (coords.length < 3) return "0.0";
+  const R = 111320;
+  const cosLat = Math.cos((coords[0][0] * Math.PI) / 180);
+  let area = 0;
+  for (let i = 0; i < coords.length; i++) {
+    const [lat1, lng1] = coords[i];
+    const [lat2, lng2] = coords[(i + 1) % coords.length];
+    area += lng1 * cosLat * R * (lat2 * R) - lng2 * cosLat * R * (lat1 * R);
+  }
+  return (Math.abs(area) / 2 / 1e6).toFixed(1);
+}
+
+function monthShort(iso: string) {
+  return new Date(iso).toLocaleDateString("en-GB", { month: "short" });
+}
+
+/** Up to n evenly spaced month labels for a date series, deduped. */
+function sampleLabels(dates: string[], n: number): string[] {
+  if (dates.length === 0) return [];
+  const count = Math.min(n, dates.length);
+  if (count === 1) return [monthShort(dates[0])];
+  const labels = Array.from({ length: count }, (_, i) =>
+    monthShort(dates[Math.round((i * (dates.length - 1)) / (count - 1))])
+  );
+  return labels.filter((l, i) => i === 0 || l !== labels[i - 1]);
+}
+
+function DrawOverlay({
+  area,
+  km2,
+  listingCount,
+}: {
+  area: string;
+  km2: string | null;
+  listingCount: number | null;
+}) {
   const reduce = useReducedMotion();
   const hood = hoodName(area);
-  const km2 = hoodKm2(area);
-  const listings = hoodListingCount(area);
+  const verts = hoodVerts(area);
+  const hoodPath = pathOf(verts);
+  const dimPath = "M0,0 H100 V100 H0 Z " + hoodPath;
+  const n = verts.length;
+
+  // Cursor path: from the Draw button (top centre) down to the first vertex,
+  // then around the outline in sync with the stroke animation.
+  const cursorX = ["52%", ...verts.map(([x]) => `${x}%`)];
+  const cursorY = ["7%", ...verts.map(([, y]) => `${y}%`)];
+  const cursorTimes = [0, ...verts.map((_, i) => (DRAW_START + (i / (n - 1)) * DRAW_DUR) / DRAW_END)];
 
   return (
     <motion.div
@@ -113,34 +312,35 @@ function DrawOverlay({ area }: { area: string }) {
     >
       <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
         <motion.path
-          d={DIM_PATH}
+          d={dimPath}
           fillRule="evenodd"
           fill="#0C100A"
           initial={{ opacity: 0 }}
           animate={{ opacity: 0.4 }}
-          transition={{ duration: reduce ? 0 : 0.6, delay: reduce ? 0 : 0.85 }}
+          transition={{ duration: reduce ? 0 : 0.6, delay: reduce ? 0 : DRAW_END + 0.1 }}
         />
         <motion.path
-          d={HOOD_PATH}
+          d={hoodPath}
           fill="#8FCC80"
           stroke="none"
           initial={{ opacity: 0 }}
           animate={{ opacity: 0.18 }}
-          transition={{ duration: reduce ? 0 : 0.6, delay: reduce ? 0 : 0.9 }}
+          transition={{ duration: reduce ? 0 : 0.6, delay: reduce ? 0 : DRAW_END + 0.15 }}
         />
+        {/* No non-scaling-stroke here: combined with a stretched viewBox it
+            breaks the pathLength dash animation into disconnected segments. */}
         <motion.path
-          d={HOOD_PATH}
+          d={hoodPath}
           fill="none"
           stroke="#1F2A16"
-          strokeWidth={2.5}
+          strokeWidth={0.45}
           strokeLinejoin="round"
           strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
           initial={{ pathLength: reduce ? 1 : 0 }}
           animate={{ pathLength: 1 }}
-          transition={{ duration: reduce ? 0 : 1.3, ease: "easeInOut" }}
+          transition={{ duration: reduce ? 0 : DRAW_DUR, delay: reduce ? 0 : DRAW_START, ease: "easeInOut" }}
         />
-        {HOOD_VERTS.map(([x, y], i) => (
+        {verts.map(([x, y], i) => (
           <motion.rect
             key={i}
             x={x - 1.4}
@@ -154,16 +354,45 @@ function DrawOverlay({ area }: { area: string }) {
             vectorEffect="non-scaling-stroke"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: reduce ? 0 : 0.2, delay: reduce ? 0 : 0.6 + i * 0.06 }}
+            transition={{
+              duration: reduce ? 0 : 0.18,
+              delay: reduce ? 0 : DRAW_START + (i / (n - 1)) * DRAW_DUR,
+            }}
           />
         ))}
       </svg>
 
+      {/* Drawing cursor — leaves the Draw button and traces the outline */}
+      {!reduce && (
+        <motion.div
+          className="absolute z-20"
+          style={{ translateX: "-50%", translateY: "-50%" }}
+          initial={{ left: "52%", top: "7%", opacity: 0 }}
+          animate={{ left: cursorX, top: cursorY, opacity: [0, 1, 1, 0] }}
+          transition={{
+            left: { duration: DRAW_END, times: cursorTimes, ease: "easeInOut" },
+            top: { duration: DRAW_END, times: cursorTimes, ease: "easeInOut" },
+            opacity: { duration: DRAW_END + 0.25, times: [0, 0.08, 0.93, 1] },
+          }}
+        >
+          <span
+            className="block w-3 h-3 rounded-full"
+            style={{
+              background: "#FFFFFF",
+              border: "2.5px solid #4A5E3A",
+              boxShadow: "0 0 0 4px rgba(143,204,128,0.35), 0 2px 8px rgba(20,30,15,0.4)",
+            }}
+          />
+        </motion.div>
+      )}
+
+      {/* Completion chip sits at the bottom of the map so it stays visible in
+          the map sliver once the page has scrolled down to the dashboard. */}
       <motion.div
-        className="absolute top-3 left-1/2 -translate-x-1/2"
-        initial={{ opacity: 0, y: -8 }}
+        className="absolute bottom-2.5 left-1/2 -translate-x-1/2"
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: reduce ? 0 : 0.35, delay: reduce ? 0 : 0.5 }}
+        transition={{ duration: reduce ? 0 : 0.35, delay: reduce ? 0 : DRAW_END + 0.35 }}
       >
         <span
           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap"
@@ -175,16 +404,14 @@ function DrawOverlay({ area }: { area: string }) {
           }}
         >
           <PenLine size={11} style={{ color: "#4A5E3A" }} />
-          Custom area · {hood} · ~{km2} km² · {listings} listings
+          Custom area · {hood} · ~{km2 ?? "…"} km² ·{" "}
+          {listingCount != null ? `${fmtInt(listingCount)} listings` : "counting…"}
         </span>
       </motion.div>
     </motion.div>
   );
 }
 
-
-const SEASON = [0.62, 0.66, 0.74, 0.85, 0.95, 1.06, 1.16, 1.18, 1.04, 0.9, 0.72, 0.66];
-const MONTHS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
 
 // Dark-glass tokens (inlined — no dependency on dashboard/tokens.ts)
 const DT = {
@@ -197,12 +424,6 @@ const DT = {
   green: "#8FCC80",
   olive: "#4A5E3A",
 };
-
-const TYPE_MIX = [
-  { label: "Apartment", share: 52 },
-  { label: "Villa", share: 31 },
-  { label: "Studio", share: 17 },
-];
 
 // ── Shared SVG mini-chart helper ──────────────────────────────────────────
 
@@ -243,173 +464,185 @@ function MiniLineChart({
   );
 }
 
-// ── Market tab content ─────────────────────────────────────────────────────
+function KpiRow({ kpis }: { kpis: Array<{ label: string; val: string; accent: boolean }> }) {
+  return (
+    <div className="grid grid-cols-4 gap-1.5 p-2 shrink-0">
+      {kpis.map((k) => (
+        <div key={k.label} className="rounded-xl px-2 py-2" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
+          <p className="font-display font-bold text-sm leading-none" style={{ color: k.accent ? DT.green : DT.text }}>{k.val}</p>
+          <p className="text-[9px] mt-1.5 uppercase tracking-wide font-medium" style={{ color: DT.muted }}>{k.label}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-function MarketContent({ area }: { area: string }) {
-  const d = AREA_DATA[area];
-  const hoodOcc = Math.min(98, d.occupancy + 7);
-  const hoodRate = Math.round(d.rate * 1.12);
-  const listings = hoodListingCount(area);
-  const fwd60 = Math.round(hoodOcc * 0.88);
-  const occ = useCountUp(hoodOcc, area);
+// ── Market tab content — real numbers for the drawn polygon ───────────────
 
-  const occSeries = SEASON.map((m) => Math.min(98, Math.round(hoodOcc * m)));
+function MarketContent({ stats }: { stats: SelectionStats }) {
+  const occTarget = Math.round(stats.effOccTodate ?? 0);
+  const occ = useCountUp(occTarget, stats);
+
+  const weekly = stats.weekly.filter((w) => w.effOcc != null);
+  const series = weekly.map((w) => w.effOcc as number);
+  const labels = sampleLabels(weekly.map((w) => w.weekStart), 5);
+  const lastAdr = [...weekly].reverse().find((w) => w.medianAdr != null)?.medianAdr ?? null;
+
+  const mixTotal = stats.typeMix.reduce((s, m) => s + m.count, 0);
+  const mix = stats.typeMix.filter((m) => m.count > 0).slice(0, 3);
 
   const kpis = [
-    { label: "Listings", val: listings.toLocaleString(), accent: false },
-    { label: "Occupancy", val: `${occ}%`, accent: true },
-    { label: "Next 60d", val: `${fwd60}%`, accent: false },
-    { label: "Median ADR", val: `€${hoodRate}`, accent: false },
+    { label: "Listings", val: fmtInt(stats.listingCount), accent: false },
+    { label: "Occupancy", val: stats.effOccTodate != null ? `${occ}%` : "—", accent: true },
+    { label: "Next 60d", val: fmtPct(stats.effOccFwd60), accent: false },
+    { label: "Median ADR", val: fmtEuro(stats.medianRate), accent: false },
   ];
 
   return (
     <>
-      {/* KPI cards */}
-      <div className="grid grid-cols-4 gap-1.5 p-2 shrink-0">
-        {kpis.map((k) => (
-          <div key={k.label} className="rounded-xl px-2 py-2" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
-            <p className="font-display font-bold text-sm leading-none" style={{ color: k.accent ? DT.green : DT.text }}>{k.val}</p>
-            <p className="text-[9px] mt-1.5 uppercase tracking-wide font-medium" style={{ color: DT.muted }}>{k.label}</p>
-          </div>
-        ))}
-      </div>
+      <KpiRow kpis={kpis} />
 
-      {/* Weekly occupancy chart */}
+      {/* Weekly effective occupancy */}
       <div className="flex-1 mx-2 rounded-xl p-2.5 flex flex-col min-h-0" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
         <div className="flex items-center justify-between mb-1 shrink-0">
           <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: DT.muted }}>Weekly occupancy</p>
-          <p className="text-[9px]" style={{ color: DT.faint }}>Peak Jul–Aug</p>
+          <p className="text-[9px]" style={{ color: DT.faint }}>latest ADR {fmtEuro(lastAdr)}</p>
         </div>
         <div className="flex-1 min-h-0">
-          <MiniLineChart series={occSeries} gradId="heroMktFill" />
+          {series.length >= 2 ? (
+            <MiniLineChart series={series} gradId="heroMktFill" />
+          ) : (
+            <p className="text-[10px] mt-2" style={{ color: DT.faint }}>Not enough weekly history</p>
+          )}
         </div>
         <div className="flex justify-between mt-1 shrink-0">
-          {MONTHS.map((m, i) => <span key={i} className="text-[8px]" style={{ color: DT.faint }}>{m}</span>)}
+          {labels.map((m, i) => <span key={i} className="text-[8px]" style={{ color: DT.faint }}>{m}</span>)}
         </div>
       </div>
 
       {/* Property mix */}
-      <div className="mx-2 mt-1.5 rounded-xl p-2.5 shrink-0" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
-        <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: DT.muted }}>Property mix</p>
-        <div className="flex flex-col gap-1.5">
-          {TYPE_MIX.map((m) => (
-            <div key={m.label}>
-              <div className="flex justify-between mb-0.5">
-                <span className="text-[10px]" style={{ color: DT.text }}>{m.label}</span>
-                <span className="text-[10px]" style={{ color: DT.muted }}>{m.share}%</span>
+      <div className="mx-2 mt-1.5 rounded-xl p-2 shrink-0" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
+        <p className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: DT.muted }}>Property mix</p>
+        <div className="flex flex-col gap-1">
+          {mix.map((m) => {
+            const share = mixTotal ? Math.round((100 * m.count) / mixTotal) : 0;
+            return (
+              <div key={m.group}>
+                <div className="flex justify-between mb-0.5">
+                  <span className="text-[10px]" style={{ color: DT.text }}>{TYPE_GROUP_LABELS[m.group]}</span>
+                  <span className="text-[10px]" style={{ color: DT.muted }}>{share}%</span>
+                </div>
+                <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
+                  <motion.div
+                    className="h-full rounded-full"
+                    style={{ background: "linear-gradient(90deg,#4A5E3A,#8FCC80)" }}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${share}%` }}
+                    transition={{ duration: 0.5, delay: 0.1 }}
+                  />
+                </div>
               </div>
-              <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
-                <motion.div
-                  className="h-full rounded-full"
-                  style={{ background: "linear-gradient(90deg,#4A5E3A,#8FCC80)" }}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${m.share}%` }}
-                  transition={{ duration: 0.5, delay: 0.1 }}
-                />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </>
   );
 }
 
-// ── Pricing tab content ────────────────────────────────────────────────────
+// ── Pricing tab content — real forward prices for the drawn polygon ───────
 
-// Forward prices: seasonal multipliers for next 6 months (Jul–Dec)
-const FWD_MULT = [1.28, 1.32, 1.18, 1.05, 0.88, 0.82];
-const FWD_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-// Weekly ADR trend (12 weeks)
-const ADR_MULT = [0.85, 0.88, 0.92, 0.98, 1.05, 1.18, 1.32, 1.35, 1.20, 1.04, 0.90, 0.82];
+function PricingContent({ stats, pricing }: { stats: SelectionStats; pricing: PricingData }) {
+  const byMonth = pricing.byMonth
+    .filter((m): m is { month: string; medianPrice: number } => m.medianPrice != null)
+    .slice(0, 6);
+  const fwdSeries = byMonth.map((m) => m.medianPrice);
+  const fwdLabels = byMonth.map((m) => monthShort(`${m.month}-01T00:00:00Z`));
 
-function PricingContent({ area }: { area: string }) {
-  const d = AREA_DATA[area];
-  const hoodRate = Math.round(d.rate * 1.12);
-  const avgRate = Math.round(hoodRate * 1.08);
-  const next30Rate = Math.round(hoodRate * FWD_MULT[0]);
+  const now = Date.now();
+  const next30 = pricing.forwardCurve
+    .filter((p) => new Date(p.date).getTime() < now + 30 * 86400000)
+    .map((p) => p.medianPrice)
+    .filter((v): v is number => v != null);
+  const next30Med = next30.length
+    ? [...next30].sort((a, b) => a - b)[Math.floor(next30.length / 2)]
+    : null;
 
-  const fwdSeries = FWD_MULT.map((m) => Math.round(hoodRate * m));
-  const adrSeries = ADR_MULT.map((m) => Math.round(hoodRate * m));
+  const peak = byMonth.reduce<{ month: string; medianPrice: number } | null>(
+    (a, b) => (a == null || b.medianPrice > a.medianPrice ? b : a),
+    null
+  );
+  const peakLabel = peak
+    ? new Date(`${peak.month}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long" })
+    : "—";
+
+  const adrSeries = stats.weekly.map((w) => w.medianAdr).filter((v): v is number => v != null);
+  const adrMax = Math.max(...adrSeries, 1);
+  const barMax = Math.max(...fwdSeries, 1);
 
   const kpis = [
-    { label: "Median rate", val: `€${hoodRate}`, accent: true },
-    { label: "Average rate", val: `€${avgRate}`, accent: false },
-    { label: "Next 30d median", val: `€${next30Rate}`, accent: false },
-    { label: "Peak month", val: "August", accent: false },
+    { label: "Median rate", val: fmtEuro(stats.medianRate), accent: true },
+    { label: "Average rate", val: fmtEuro(stats.avgRate), accent: false },
+    { label: "Next 30d median", val: fmtEuro(next30Med), accent: false },
+    { label: "Peak month", val: peakLabel, accent: false },
   ];
-
-  // Bar chart for forward prices by month
-  const barMax = Math.max(...fwdSeries);
 
   return (
     <>
-      {/* KPI cards */}
-      <div className="grid grid-cols-4 gap-1.5 p-2 shrink-0">
-        {kpis.map((k) => (
-          <div key={k.label} className="rounded-xl px-2 py-2" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
-            <p className="font-display font-bold text-sm leading-none" style={{ color: k.accent ? DT.green : DT.text }}>{k.val}</p>
-            <p className="text-[9px] mt-1.5 uppercase tracking-wide font-medium" style={{ color: DT.muted }}>{k.label}</p>
-          </div>
-        ))}
-      </div>
+      <KpiRow kpis={kpis} />
 
-      {/* Forward prices line chart */}
+      {/* Forward prices */}
       <div className="flex-1 mx-2 rounded-xl p-2.5 flex flex-col min-h-0" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
         <div className="flex items-center justify-between mb-1 shrink-0">
           <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: DT.muted }}>Forward prices · next 6 months</p>
           <p className="text-[9px]" style={{ color: DT.faint }}>median nightly</p>
         </div>
         <div className="flex-1 min-h-0">
-          <MiniLineChart series={fwdSeries} gradId="heroPriceFill" />
+          {fwdSeries.length >= 2 ? (
+            <MiniLineChart series={fwdSeries} gradId="heroPriceFill" />
+          ) : (
+            <p className="text-[10px] mt-2" style={{ color: DT.faint }}>No forward pricing yet</p>
+          )}
         </div>
         <div className="flex justify-between mt-1 shrink-0">
-          {FWD_MONTHS.map((m, i) => <span key={i} className="text-[8px]" style={{ color: DT.faint }}>{m}</span>)}
+          {fwdLabels.map((m, i) => <span key={i} className="text-[8px]" style={{ color: DT.faint }}>{m}</span>)}
         </div>
       </div>
 
-      {/* Weekly ADR + price distribution side by side */}
+      {/* Weekly ADR + forward by month */}
       <div className="grid grid-cols-2 gap-1.5 mx-2 mt-1.5 shrink-0">
-        {/* Weekly ADR bars */}
         <div className="rounded-xl p-2.5" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
           <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: DT.muted }}>Weekly ADR</p>
           <div className="flex items-end gap-0.5" style={{ height: 36 }}>
-            {adrSeries.map((v, i) => {
-              const isPeak = v === Math.max(...adrSeries);
-              return (
-                <motion.div
-                  key={i}
-                  className="flex-1 rounded-t-sm"
-                  style={{ background: isPeak ? DT.green : "rgba(143,204,128,0.45)" }}
-                  initial={{ height: 0 }}
-                  animate={{ height: `${(v / Math.max(...adrSeries)) * 36}px` }}
-                  transition={{ duration: 0.4, delay: i * 0.04 }}
-                />
-              );
-            })}
+            {adrSeries.map((v, i) => (
+              <motion.div
+                key={i}
+                className="flex-1 rounded-t-sm"
+                style={{ background: v === adrMax ? DT.green : "rgba(143,204,128,0.45)" }}
+                initial={{ height: 0 }}
+                animate={{ height: `${(v / adrMax) * 36}px` }}
+                transition={{ duration: 0.4, delay: i * 0.03 }}
+              />
+            ))}
           </div>
         </div>
 
-        {/* Forward price by month bars */}
         <div className="rounded-xl p-2.5" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
           <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: DT.muted }}>By month</p>
           <div className="flex items-end gap-0.5" style={{ height: 36 }}>
-            {fwdSeries.map((v, i) => {
-              const isPeak = v === barMax;
-              return (
-                <motion.div
-                  key={i}
-                  className="flex-1 rounded-t-sm"
-                  style={{ background: isPeak ? DT.green : "rgba(143,204,128,0.45)" }}
-                  initial={{ height: 0 }}
-                  animate={{ height: `${(v / barMax) * 36}px` }}
-                  transition={{ duration: 0.4, delay: i * 0.06 }}
-                />
-              );
-            })}
+            {fwdSeries.map((v, i) => (
+              <motion.div
+                key={i}
+                className="flex-1 rounded-t-sm"
+                style={{ background: v === barMax ? DT.green : "rgba(143,204,128,0.45)" }}
+                initial={{ height: 0 }}
+                animate={{ height: `${(v / barMax) * 36}px` }}
+                transition={{ duration: 0.4, delay: i * 0.06 }}
+              />
+            ))}
           </div>
           <div className="flex justify-between mt-1">
-            {FWD_MONTHS.map((m, i) => <span key={i} className="text-[8px]" style={{ color: DT.faint }}>{m[0]}</span>)}
+            {fwdLabels.map((m, i) => <span key={i} className="text-[8px]" style={{ color: DT.faint }}>{m[0]}</span>)}
           </div>
         </div>
       </div>
@@ -417,16 +650,32 @@ function PricingContent({ area }: { area: string }) {
   );
 }
 
-// ── Dashboard shell — wraps header + tabs + content ────────────────────────
+// ── Dashboard panel — mirrors the real page below the map ─────────────────
 
-function DashboardShell({
-  area,
+function SkeletonContent() {
+  return (
+    <div className="flex-1 flex flex-col animate-pulse min-h-0 pb-2">
+      <div className="grid grid-cols-4 gap-1.5 p-2 shrink-0">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="rounded-xl h-12" style={{ background: DT.card, border: `1px solid ${DT.border}` }} />
+        ))}
+      </div>
+      <div className="flex-1 mx-2 rounded-xl min-h-0" style={{ background: DT.card, border: `1px solid ${DT.border}` }} />
+      <div className="mx-2 mt-1.5 rounded-xl h-16 shrink-0" style={{ background: DT.card, border: `1px solid ${DT.border}` }} />
+    </div>
+  );
+}
+
+function DashboardPanel({
   tab,
-  motionKey,
+  live,
+  stats,
+  pricing,
 }: {
-  area: string;
   tab: "market" | "pricing";
-  motionKey: string;
+  live: boolean;
+  stats: SelectionStats | null;
+  pricing: PricingData | null;
 }) {
   const tabs = [
     { id: "market" as const, label: "Market overview", icon: <BarChart3 size={10} /> },
@@ -434,26 +683,31 @@ function DashboardShell({
   ];
 
   return (
-    <motion.div
-      key={motionKey}
-      className="absolute inset-0 z-10 flex flex-col overflow-hidden"
-      style={{ background: DT.bg }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-    >
-      {/* Mini header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b shrink-0" style={{ borderColor: DT.border }}>
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-5 h-5 rounded flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#4A5E3A,#6B7B4F)" }}>
-            <span className="text-white font-display text-[10px] font-bold">P</span>
-          </div>
-          <span className="text-[11px] font-medium truncate" style={{ color: DT.muted }}>Market Dashboard · {area}</span>
-        </div>
-        <span className="flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(143,204,128,0.12)", color: DT.green }}>
-          <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: DT.green }} />LIVE
+    <div className="relative flex flex-col overflow-hidden" style={{ height: DASH_H, background: DT.bg }}>
+      {/* Context bar — selection + metric toggle, like the real dashboard */}
+      <div className="flex items-center gap-2 px-3 pt-2.5 pb-2 shrink-0">
+        <Hexagon size={12} style={{ color: DT.green }} />
+        <span className="font-display font-bold text-sm uppercase tracking-wide leading-none" style={{ color: DT.text }}>
+          Drawn area
         </span>
+        <span className="text-[10px]" style={{ color: DT.muted }}>
+          {stats ? `${fmtInt(stats.listingCount)} listings` : "…"}
+        </span>
+        <span
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold"
+          style={{ color: DT.muted, border: `1px solid ${DT.border}` }}
+        >
+          <X size={9} /> Clear
+        </span>
+        <div className="flex-1" />
+        <div className="flex rounded-lg p-0.5 gap-0.5" style={{ background: DT.card, border: `1px solid ${DT.border}` }}>
+          <span className="px-2 py-1 rounded-md text-[9px] font-semibold" style={{ background: DT.olive, color: "#FFFFFF" }}>
+            Effective
+          </span>
+          <span className="px-2 py-1 rounded-md text-[9px] font-semibold" style={{ color: DT.faint }}>
+            Raw
+          </span>
+        </div>
       </div>
 
       {/* Tab bar — driven by stage, not interactive */}
@@ -463,43 +717,51 @@ function DashboardShell({
           return (
             <div
               key={t.id}
-              className="flex items-center gap-1 px-3 py-2 text-[11px] font-semibold"
-              style={active
-                ? { color: DT.text, borderBottom: `2px solid ${DT.green}`, marginBottom: -1 }
-                : { color: DT.faint, borderBottom: "2px solid transparent", marginBottom: -1 }}
+              className="relative flex items-center gap-1 px-3 py-2 text-[11px] font-semibold"
+              style={{ color: active ? DT.text : DT.faint }}
             >
               <span style={{ color: active ? DT.green : DT.faint }}>{t.icon}</span>
               {t.label}
+              {active && (
+                <motion.span
+                  layoutId="heroTabLine"
+                  className="absolute inset-x-0 -bottom-px h-0.5"
+                  style={{ background: DT.green }}
+                />
+              )}
             </div>
           );
         })}
+        <span className="flex items-center gap-1 px-3 py-2 text-[11px] font-medium select-none" style={{ color: DT.faint }}>
+          <Plus size={10} /> More soon
+        </span>
       </div>
 
-      {/* Tab content — animates on switch */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={tab}
-          className="flex-1 flex flex-col overflow-hidden"
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.3 }}
-        >
-          {tab === "market" ? <MarketContent area={area} /> : <PricingContent area={area} />}
-        </motion.div>
-      </AnimatePresence>
-
-      {/* CTA */}
-      <div className="px-2 py-2 shrink-0">
-        <a
-          href="/dashboard"
-          className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
-          style={{ background: DT.olive, color: "#FFFFFF" }}
-        >
-          Open full dashboard <ArrowRight size={11} />
-        </a>
-      </div>
-    </motion.div>
+      {/* Tab content — skeleton until the polygon stats arrive, so charts
+          draw themselves as the page scrolls into view */}
+      {live && stats ? (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={tab}
+            className="flex-1 flex flex-col overflow-hidden pb-2"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.3 }}
+          >
+            {tab === "market" ? (
+              <MarketContent stats={stats} />
+            ) : pricing ? (
+              <PricingContent stats={stats} pricing={pricing} />
+            ) : (
+              <SkeletonContent />
+            )}
+          </motion.div>
+        </AnimatePresence>
+      ) : (
+        <SkeletonContent />
+      )}
+    </div>
   );
 }
 
@@ -522,8 +784,52 @@ export default function HeroSequence({
   stage: Stage;
   onSelectArea: (a: string) => void;
 }) {
-  const mapVisible = stage === "map" || stage === "zoom" || stage === "draw";
+  const reduce = useReducedMotion();
+  const scrolled = stage === "market" || stage === "pricing";
+  const drawVisible = stage === "draw" || scrolled;
   const slug = area.toLowerCase().replace(/\s+/g, "-");
+
+  // Real numbers for the drawn area, fetched from the same API the full
+  // dashboard uses (live DB when configured, deterministic demo otherwise).
+  const [stats, setStats] = useState<SelectionStats | null>(null);
+  const [pricing, setPricing] = useState<PricingData | null>(null);
+  const [km2, setKm2] = useState<string | null>(null);
+  const [points, setPoints] = useState<PointRow[]>([]);
+
+  // Every listing as an occupancy-coloured dot, once per page load.
+  useEffect(() => {
+    fetch("/api/dashboard/points")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d: PointRow[]) => Array.isArray(d) && setPoints(d))
+      .catch(() => {});
+  }, []);
+
+  const handlePolygon = useCallback((coords: PolygonCoords) => {
+    setKm2(polygonKm2(coords));
+    const opts = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ polygon: coords, filters: {} }),
+    };
+    fetch("/api/dashboard/stats", opts)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: SelectionStats | null) => d && setStats(d))
+      .catch(() => {});
+    fetch("/api/dashboard/pricing", opts)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: PricingData | null) => d && setPricing(d))
+      .catch(() => {});
+  }, []);
+
+  // New area, new cycle — drop the previous polygon's numbers.
+  useEffect(() => {
+    if (stage === "map" || stage === "zoom") {
+      setStats(null);
+      setPricing(null);
+      setKm2(null);
+    }
+  }, [stage]);
+
   const steps: { id: Stage; label: string }[] = [
     { id: "map", label: "Scan" },
     { id: "zoom", label: "Zoom" },
@@ -534,12 +840,24 @@ export default function HeroSequence({
   const activeStep = steps.findIndex((s) => s.id === stage);
 
   return (
-    <div className="w-full">
+    <div className="w-full relative">
+      {/* Ambient glow behind the frame */}
       <div
-        className="rounded-2xl overflow-hidden border"
+        aria-hidden
+        className="absolute -inset-8 pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(55% 45% at 75% 12%, rgba(143,204,128,0.14), transparent 70%), radial-gradient(45% 40% at 10% 90%, rgba(107,123,79,0.18), transparent 70%)",
+          filter: "blur(30px)",
+        }}
+      />
+
+      <div
+        className="relative rounded-2xl overflow-hidden border"
         style={{
           borderColor: "rgba(255,255,255,0.09)",
-          boxShadow: "0 18px 50px -20px rgba(0,0,0,0.5)",
+          boxShadow:
+            "0 24px 70px -24px rgba(143,204,128,0.22), 0 18px 50px -20px rgba(0,0,0,0.55)",
           isolation: "isolate",
         }}
       >
@@ -558,86 +876,169 @@ export default function HeroSequence({
               className="text-[10px] font-medium px-3 py-0.5 rounded-md"
               style={{ background: "rgba(255,255,255,0.07)", color: "#ADB8A0", border: "1px solid rgba(255,255,255,0.09)" }}
             >
-              propsights.app/{slug}
+              propsights.app/dashboard/{slug}
             </span>
           </div>
-          <span className="flex items-center gap-1 text-[9px] font-semibold" style={{ color: "#8FCC80" }}>
-            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "#8FCC80" }} />
+          <span className="w-10" />
+        </div>
+
+        {/* Sticky dashboard header — stays put while the page scrolls under it */}
+        <div
+          className="flex items-center justify-between px-3 h-9 border-b relative z-30"
+          style={{ background: "#0E130B", borderColor: DT.border }}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-5 h-5 rounded flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#4A5E3A,#6B7B4F)" }}>
+              <span className="text-white font-display text-[10px] font-bold">P</span>
+            </div>
+            <span className="text-[11px] font-medium truncate" style={{ color: DT.muted }}>
+              Market Dashboard · Cyprus STR
+            </span>
+          </div>
+          <span className="flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(143,204,128,0.12)", color: DT.green }}>
+            <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: DT.green }} />
             LIVE
           </span>
         </div>
 
-        {/* Stage screen */}
-        <div className="relative" style={{ height: "clamp(440px, 64vh, 640px)", background: "#E8EDE3" }}>
-          <div
-            className="absolute inset-0 transition-opacity duration-500"
-            style={{
-              opacity: mapVisible ? 1 : 0,
-              pointerEvents: mapVisible ? "auto" : "none",
-              isolation: "isolate",
-            }}
+        {/* Scroll viewport — the whole dashboard page moves inside it */}
+        <div
+          className="relative overflow-hidden"
+          style={{ height: "clamp(380px, 44vh, 520px)", background: DT.bg }}
+        >
+          <motion.div
+            className="absolute inset-x-0 top-0 will-change-transform"
+            style={{ height: PAGE_H }}
+            animate={{ y: scrolled ? SCROLL_Y : "0%" }}
+            transition={reduce ? { duration: 0 } : { duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
           >
-            <MapContainer
-              center={CYPRUS_CENTER}
-              zoom={CYPRUS_ZOOM}
-              zoomControl={false}
-              attributionControl={true}
-              dragging={false}
-              scrollWheelZoom={false}
-              doubleClickZoom={false}
-              touchZoom={false}
-              keyboard={false}
-              style={{ width: "100%", height: "100%", background: "#E8EDE3" }}
-            >
-              <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                attribution="&copy; OpenStreetMap &copy; CARTO"
-                subdomains="abcd"
-              />
-              {AREAS.map((a) => {
-                const d = AREA_DATA[a];
-                return (
-                  <Marker
-                    key={a}
-                    position={[d.lat, d.lng]}
-                    icon={makeMarkerIcon(a === area)}
-                    zIndexOffset={a === area ? 1000 : 0}
-                    eventHandlers={{ click: () => onSelectArea(a) }}
+            {/* ── Map section ── */}
+            <div className="relative" style={{ height: MAP_H, background: "#E8EDE3" }}>
+              {/* isolate Leaflet's internal z-indexes so overlays can sit above */}
+              <div className="absolute inset-0" style={{ isolation: "isolate" }}>
+              <MapContainer
+                center={CYPRUS_CENTER}
+                zoom={CYPRUS_ZOOM}
+                zoomControl={false}
+                attributionControl={true}
+                dragging={false}
+                scrollWheelZoom={false}
+                doubleClickZoom={false}
+                touchZoom={false}
+                keyboard={false}
+                style={{ width: "100%", height: "100%", background: "#E8EDE3" }}
+              >
+                <TileLayer
+                  url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                  attribution="&copy; OpenStreetMap &copy; CARTO"
+                  subdomains="abcd"
+                />
+                <HeroPointsLayer points={points} />
+                {AREAS.map((a) => {
+                  const d = AREA_DATA[a];
+                  return (
+                    <Marker
+                      key={a}
+                      position={[d.lat, d.lng]}
+                      icon={
+                        stage === "map" && PILL_AREAS.has(a)
+                          ? makePillIcon(a, d.rate, a === area)
+                          : makeMarkerIcon(stage !== "map" && a === area)
+                      }
+                      zIndexOffset={a === area ? 1000 : PILL_AREAS.has(a) ? 500 : 0}
+                      eventHandlers={{ click: () => onSelectArea(a) }}
+                    />
+                  );
+                })}
+                <MapController area={area} stage={stage} />
+                <PolygonProbe stage={stage} area={area} onPolygon={handlePolygon} />
+              </MapContainer>
+              </div>
+
+              <AnimatePresence>
+                {drawVisible && (
+                  <DrawOverlay
+                    key={`draw-${area}`}
+                    area={area}
+                    km2={km2}
+                    listingCount={stats?.listingCount ?? null}
                   />
-                );
-              })}
-              <MapController area={area} stage={stage} />
-            </MapContainer>
-          </div>
-
-          <AnimatePresence mode="wait">
-            {stage === "draw" && <DrawOverlay key="draw" area={area} />}
-            {stage === "market" && (
-              <DashboardShell key={`market-${area}`} area={area} tab="market" motionKey={`market-${area}`} />
-            )}
-            {stage === "pricing" && (
-              <DashboardShell key={`pricing-${area}`} area={area} tab="pricing" motionKey={`pricing-${area}`} />
-            )}
-          </AnimatePresence>
-
-          {mapVisible && (
-            <div className="absolute left-3 bottom-3 z-20 pointer-events-none">
-              <AnimatePresence mode="wait">
-                <motion.span
-                  key={stage}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.25 }}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold"
-                  style={{ background: "#4A5E3A", color: "#FFFFFF", boxShadow: "0 4px 12px rgba(0,0,0,0.25)" }}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#8FCC80" }} />
-                  {caption(stage, area)}
-                </motion.span>
+                )}
               </AnimatePresence>
+
+              {/* Search + draw toolbar, like the real map hero */}
+              <div className="absolute left-1/2 -translate-x-1/2 top-2.5 z-20 flex items-center gap-1.5 pointer-events-none">
+                <span className="glass-dark rounded-lg pl-2.5 pr-3 h-8 flex items-center gap-1.5 text-[11px] font-medium whitespace-nowrap" style={{ color: DT.text }}>
+                  <Search size={11} style={{ color: DT.faint }} />
+                  {area}
+                </span>
+                <span
+                  className="glass-dark rounded-lg px-3 h-8 flex items-center gap-1.5 text-[11px] font-semibold whitespace-nowrap"
+                  style={
+                    stage === "draw"
+                      ? { color: DT.green, boxShadow: "0 0 0 1.5px rgba(143,204,128,0.55)" }
+                      : { color: DT.text }
+                  }
+                >
+                  <PenLine size={11} style={{ color: DT.green }} />
+                  {stage === "draw" ? "Drawing…" : "Draw area"}
+                </span>
+              </div>
+
+              {/* Filters chip (stand-in for the real filter panel) */}
+              <div className="absolute left-2.5 top-2.5 z-20 pointer-events-none">
+                <span className="glass-dark rounded-lg px-2.5 h-8 flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: DT.text }}>
+                  <SlidersHorizontal size={11} style={{ color: DT.green }} />
+                  Filters
+                </span>
+              </div>
+
+              {/* Drawing instructions */}
+              <AnimatePresence>
+                {stage === "draw" && (
+                  <motion.div
+                    className="absolute left-1/2 -translate-x-1/2 top-12 z-20 pointer-events-none"
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.25 }}
+                  >
+                    <span className="glass-dark rounded-lg px-3 py-1.5 text-[10px] font-medium whitespace-nowrap" style={{ color: DT.muted }}>
+                      Click to add points · ⏎ to finish
+                    </span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Narrative caption — only while exploring the map */}
+              {(stage === "map" || stage === "zoom") && (
+                <div className="absolute left-3 bottom-3 z-20 pointer-events-none">
+                  <AnimatePresence mode="wait">
+                    <motion.span
+                      key={stage}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.25 }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold"
+                      style={{ background: "#4A5E3A", color: "#FFFFFF", boxShadow: "0 4px 12px rgba(0,0,0,0.25)" }}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#8FCC80" }} />
+                      {caption(stage, area)}
+                    </motion.span>
+                  </AnimatePresence>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* ── Dashboard panel below the map ── */}
+            <DashboardPanel
+              tab={stage === "pricing" ? "pricing" : "market"}
+              live={scrolled}
+              stats={stats}
+              pricing={pricing}
+            />
+          </motion.div>
         </div>
       </div>
 
@@ -656,7 +1057,7 @@ export default function HeroSequence({
                 />
               </div>
               <span
-                className="text-[10px] font-medium transition-colors"
+                className="text-[11px] font-semibold uppercase tracking-wider transition-colors"
                 style={{ color: i === activeStep ? "#EAF0DF" : "#828D74" }}
               >
                 {s.label}

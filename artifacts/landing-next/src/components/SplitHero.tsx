@@ -11,12 +11,15 @@ import type { Stage } from "./HeroSequence";
 const HeroSequence = dynamic(() => import("./HeroSequence"), { ssr: false });
 
 const SEQUENCE_AREAS = ["Limassol", "Ayia Napa", "Paphos", "Protaras", "Larnaca", "Polis"];
+// Shown until /api/dashboard/summary answers with the real total.
+const TOTAL_LISTINGS_FALLBACK = "3,412+";
+const AREA_COUNT = Object.keys(AREA_DATA).length;
 const STAGES: Stage[] = ["map", "zoom", "draw", "market", "pricing"];
 const STAGE_MS: Record<Stage, number> = {
-  map: 2200,
+  map: 2600,
   zoom: 2600,
-  draw: 3400,
-  market: 3800,
+  draw: 4800, // unhurried: 0.5s pause + 2.2s outline + settle on the result
+  market: 4400, // includes the ~1.1s scroll-down into the dashboard
   pricing: 3800,
 };
 
@@ -61,6 +64,17 @@ export default function SplitHero() {
   const [areaIdx, setAreaIdx] = useState(0);
   const [stageIdx, setStageIdx] = useState(0);
   const [manualArea, setManualArea] = useState<string | null>(null);
+  const [totalListings, setTotalListings] = useState<number | null>(null);
+
+  // Real total from the serving layer (falls back to the static claim).
+  useEffect(() => {
+    fetch("/api/dashboard/summary")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { totalListings?: number } | null) => {
+        if (d?.totalListings) setTotalListings(d.totalListings);
+      })
+      .catch(() => {});
+  }, []);
 
   const activeArea = manualArea ?? SEQUENCE_AREAS[areaIdx];
   const stage = STAGES[stageIdx];
@@ -127,7 +141,7 @@ export default function SplitHero() {
             <span style={{ color: "#8FCC80" }}>street.</span>
           </h1>
 
-          <p className="text-base font-light mb-8 max-w-md" style={{ color: "#6E7D62", lineHeight: 1.7 }}>
+          <p className="text-base mb-8 max-w-md" style={{ color: "#ADB8A0", lineHeight: 1.7 }}>
             Real occupancy, nightly rates, and revenue for every Cyprus rental market — then draw a
             custom area to drill all the way down to a single neighbourhood or street.
           </p>
@@ -197,7 +211,7 @@ export default function SplitHero() {
             <a
               href="#products"
               className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl text-sm font-medium transition-all hover:text-white"
-              style={{ color: "#6E7D62", border: "1px solid rgba(255,255,255,0.08)" }}
+              style={{ color: "#ADB8A0", border: "1px solid rgba(255,255,255,0.08)" }}
             >
               See the products
             </a>
@@ -207,19 +221,75 @@ export default function SplitHero() {
 
       {/* ── Right: dark side ── */}
       <motion.div
-        className="md:w-[44%] flex flex-col justify-center px-6 md:px-10 lg:px-14 py-20 md:py-0"
+        className="md:w-[44%] flex flex-col justify-center px-6 md:px-10 lg:px-14 pt-24 pb-16 md:pt-24 md:pb-10"
         style={{ background: "#141910", minHeight: "100vh" }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5, delay: 0.2 }}
       >
+        {/* Demo intro — same display voice as the main headline */}
+        <div className="mb-5">
+          <h2
+            className="font-display font-bold uppercase"
+            style={{
+              fontSize: "clamp(1.5rem,2.4vw,2.2rem)",
+              color: "#FFFFFF",
+              letterSpacing: "-0.01em",
+              lineHeight: 0.95,
+            }}
+          >
+            The dashboard, <span style={{ color: "#8FCC80" }}>working live.</span>
+          </h2>
+          <p className="text-sm mt-3 max-w-lg" style={{ color: "#ADB8A0", lineHeight: 1.65 }}>
+            Draw any boundary on the map and the numbers rebuild for just the listings inside
+            it — occupancy, booking pace, and forward prices for the exact streets you care about.
+          </p>
+        </div>
+
         <HeroSequence area={activeArea} stage={stage} onSelectArea={selectArea} />
 
-        <div className="mt-6 pt-5 border-t" style={{ borderColor: "rgba(255,255,255,0.09)" }}>
-          <p className="text-xs" style={{ color: "#828D74" }}>
-            Based on {AREA_DATA[activeArea]?.listings.toLocaleString() ?? "—"} live listings ·
-            {" "}PropSights updates every 48h
-          </p>
+        {/* The one thing to do next — large and unmissable */}
+        <a
+          href="/dashboard"
+          className="mt-5 flex items-center justify-center gap-2.5 w-full py-4 rounded-2xl font-display font-bold uppercase tracking-wide text-xl transition-all hover:scale-[1.01] active:scale-[0.99]"
+          style={{
+            background: "linear-gradient(135deg,#4A5E3A,#6B7B4F)",
+            color: "#FFFFFF",
+            boxShadow: "0 14px 36px -14px rgba(143,204,128,0.4)",
+          }}
+        >
+          Try the dashboard for yourself <ArrowRight size={20} />
+        </a>
+
+        {/* Data credentials — big numbers, not small print */}
+        <div
+          className="mt-5 pt-4 border-t grid grid-cols-3 gap-4"
+          style={{ borderColor: "rgba(255,255,255,0.09)" }}
+        >
+          {[
+            {
+              val: totalListings ? totalListings.toLocaleString("en-GB") : TOTAL_LISTINGS_FALLBACK,
+              label: "Live listings",
+              accent: true,
+            },
+            { val: "48h", label: "Data refresh", accent: false },
+            { val: String(AREA_COUNT), label: "Areas covered", accent: false },
+          ].map((s) => (
+            <div key={s.label}>
+              <p
+                className="font-display font-bold text-2xl leading-none"
+                style={{ color: s.accent ? "#8FCC80" : "#FFFFFF" }}
+              >
+                {s.val}
+              </p>
+              <p
+                className="text-[11px] mt-1.5 uppercase tracking-wider font-semibold"
+                style={{ color: "#ADB8A0" }}
+              >
+                {s.label}
+              </p>
+            </div>
+          ))}
         </div>
       </motion.div>
     </section>

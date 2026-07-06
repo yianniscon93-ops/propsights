@@ -71,7 +71,7 @@ export default function CTASection() {
           animate={inView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.5, delay: 0.14 }}
           className="text-base mb-10 leading-relaxed"
-          style={{ color: "#6E7D62", fontWeight: 300 }}
+          style={{ color: "#ADB8A0" }}
         >
           {BRAND.name} is ready to use. Drop your email and we'll set you up within a few days.
         </motion.p>
@@ -121,7 +121,7 @@ export default function CTASection() {
               )}
             </motion.button>
           </form>
-          <p className="mt-4 text-xs" style={{ color: "#4A6038" }}>
+          <p className="mt-4 text-xs" style={{ color: "#828D74" }}>
             {done
               ? "We'll reach out within a few days with your access details."
               : "No spam. No commitment. Cancel anytime."}

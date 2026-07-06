@@ -48,7 +48,7 @@ function Stat({ stat, active, delay }: { stat: typeof STATS[0]; active: boolean;
         {val.toLocaleString()}
         {stat.suffix}
       </p>
-      <p className="text-xs font-medium" style={{ color: "#6E7D62" }}>
+      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#ADB8A0" }}>
         {stat.label}
       </p>
     </div>

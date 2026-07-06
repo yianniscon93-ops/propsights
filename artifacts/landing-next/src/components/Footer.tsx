@@ -20,11 +20,11 @@ export default function Footer() {
           </span>
         </div>
 
-        <p className="text-xs" style={{ color: "#4A6038" }}>
+        <p className="text-xs" style={{ color: "#828D74" }}>
           © 2026 {BRAND.name}
         </p>
 
-        <div className="flex gap-5 text-xs" style={{ color: "#4A6038" }}>
+        <div className="flex gap-5 text-xs" style={{ color: "#ADB8A0" }}>
           <a href="#" className="transition-colors hover:text-white">
             Privacy
           </a>

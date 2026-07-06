@@ -64,7 +64,7 @@ export default function Nav() {
               key={l.label}
               href={l.href}
               className="text-sm font-medium transition-colors hover:text-white"
-              style={{ color: "#6E7D62" }}
+              style={{ color: "#ADB8A0" }}
             >
               {l.label}
             </a>
@@ -80,7 +80,7 @@ export default function Nav() {
         </a>
 
         <button
-          className="md:hidden p-2 text-[#6E7D62] hover:text-white transition-colors"
+          className="md:hidden p-2 text-[#ADB8A0] hover:text-white transition-colors"
           onClick={() => setOpen(!open)}
         >
           {open ? <X size={20} /> : <Menu size={20} />}
@@ -102,7 +102,7 @@ export default function Nav() {
                 href={l.href}
                 onClick={() => setOpen(false)}
                 className="block py-3.5 text-sm font-medium border-b transition-colors hover:text-white"
-                style={{ color: "#6E7D62", borderColor: "rgba(255,255,255,0.06)" }}
+                style={{ color: "#ADB8A0", borderColor: "rgba(255,255,255,0.06)" }}
               >
                 {l.label}
               </a>

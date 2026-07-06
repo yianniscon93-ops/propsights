@@ -309,7 +309,7 @@ export default function ProductTabs() {
               >
                 {tab.headline}
               </h3>
-              <p className="text-base leading-relaxed mb-8" style={{ color: "#697264", fontWeight: 300 }}>
+              <p className="text-base leading-relaxed mb-8" style={{ color: "#4C5546" }}>
                 {tab.body}
               </p>
               {tab.id === "dashboard" && (
