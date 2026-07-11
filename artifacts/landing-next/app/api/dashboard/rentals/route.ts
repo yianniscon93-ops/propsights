@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPricing } from "@/lib/server/marketData";
-import { parseFilters } from "@/lib/dashboard/filters";
+import { getRentals } from "@/lib/server/marketData";
 import type { PolygonCoords } from "@/lib/dashboard/types";
 
 export const dynamic = "force-dynamic";
@@ -22,30 +21,15 @@ function parsePolygon(input: unknown): PolygonCoords | null {
 }
 
 export async function POST(req: Request) {
-  let body: { polygon?: unknown; filters?: unknown; areaId?: unknown };
+  let body: { polygon?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
   }
-
-  const polygon = body.polygon == null ? null : parsePolygon(body.polygon);
+  const polygon = body.polygon != null ? parsePolygon(body.polygon) : null;
   if (body.polygon != null && !polygon) {
-    return NextResponse.json(
-      { error: `polygon must be 3–${MAX_VERTICES} [lat,lng] pairs` },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "invalid polygon" }, { status: 400 });
   }
-
-  const filters = parseFilters(
-    body.filters && typeof body.filters === "object"
-      ? (body.filters as Record<string, unknown>)
-      : {}
-  );
-
-  const areaId =
-    typeof body.areaId === "string" && body.areaId.length <= 20 ? body.areaId : null;
-
-  const pricing = await getPricing(filters, polygon, areaId);
-  return NextResponse.json(pricing);
+  return NextResponse.json(await getRentals(polygon));
 }

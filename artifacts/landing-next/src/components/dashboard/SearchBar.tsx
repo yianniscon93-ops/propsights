@@ -2,27 +2,36 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapPin, Search, X } from "lucide-react";
-import type { DashboardSummary, Selection } from "@/lib/dashboard/types";
-import { groupAreas } from "@/lib/dashboard/areas";
+import type { AreaInfo, AreaType, Selection } from "@/lib/dashboard/types";
 import { UI } from "./tokens";
 
-interface Entry {
-  label: string;
-  sub?: string; // parent name for children
-  slugs: string[];
-  count: number;
-  lat: number;
-  lng: number;
-  zoom: number;
+const TYPE_LABEL: Record<AreaType, string> = {
+  country: "Country",
+  district: "District",
+  municipality: "Municipality",
+  community: "Community",
+  quarter: "Quarter",
+  parish: "Parish",
+  tourist_area: "Tourist area",
+};
+
+/** Breadcrumb under a result: "Kato Paphos → Paphos District". */
+function crumb(a: AreaInfo): string | null {
+  if (a.areaType === "country" || a.areaType === "district") return null;
+  return a.district ? `${TYPE_LABEL[a.areaType]} · ${a.district}` : TYPE_LABEL[a.areaType];
 }
 
-/** Glass search bar over the map: pick an area/sub-area → zoom + scope everything. */
+/**
+ * Area search over dim_areas (all levels, incl. new district sub-areas).
+ * Substring match on English + Greek names, ranked by listing count
+ * (product decision 11 Jul 2026). Zero-listing areas are hidden.
+ */
 export default function SearchBar({
-  summary,
+  areas,
   selection,
   onSelect,
 }: {
-  summary: DashboardSummary | null;
+  areas: AreaInfo[] | null;
   selection: Selection;
   onSelect: (s: Selection) => void;
 }) {
@@ -30,51 +39,20 @@ export default function SearchBar({
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  const entries = useMemo<Entry[]>(() => {
-    if (!summary) return [];
-    const bySlug = new Map(summary.areas.map((a) => [a.slug, a]));
-    const out: Entry[] = [];
-    for (const g of groupAreas(summary.areas)) {
-      const members = g.children
-        .map((c) => bySlug.get(c.slug))
-        .filter((x): x is NonNullable<typeof x> => !!x);
-      if (!members.length) continue;
-      const w = members.reduce((s, m) => s + m.count, 0);
-      out.push({
-        label: g.parent,
-        slugs: g.children.map((c) => c.slug),
-        count: g.count,
-        lat: members.reduce((s, m) => s + m.lat * m.count, 0) / w,
-        lng: members.reduce((s, m) => s + m.lng * m.count, 0) / w,
-        zoom: 11,
-      });
-      if (g.children.length > 1) {
-        for (const c of g.children) {
-          const m = bySlug.get(c.slug);
-          if (!m) continue;
-          out.push({
-            // "Paphos · Paphos" reads as a bug — the catch-all child shows as "Other".
-            label: c.label === g.parent ? "Other" : c.label,
-            sub: g.parent,
-            slugs: [c.slug],
-            count: c.count,
-            lat: m.lat,
-            lng: m.lng,
-            zoom: 13,
-          });
-        }
-      }
-    }
-    return out;
-  }, [summary]);
-
   const results = useMemo(() => {
+    if (!areas) return [];
+    const pool = areas.filter((a) => a.listingCount > 0 && a.areaType !== "country");
     const q = query.trim().toLowerCase();
-    if (!q) return entries.slice(0, 10);
-    return entries
-      .filter((e) => e.label.toLowerCase().includes(q) || e.sub?.toLowerCase().includes(q))
-      .slice(0, 10);
-  }, [entries, query]);
+    const matched = q
+      ? pool.filter(
+          (a) =>
+            a.nameEn.toLowerCase().includes(q) ||
+            (a.nameEl ?? "").toLowerCase().includes(q) ||
+            (a.district ?? "").toLowerCase().includes(q)
+        )
+      : pool;
+    return [...matched].sort((a, b) => b.listingCount - a.listingCount).slice(0, 10);
+  }, [areas, query]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -84,14 +62,18 @@ export default function SearchBar({
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  const pick = (e: Entry) => {
-    onSelect({ kind: "area", slugs: e.slugs, label: e.sub ? `${e.sub} · ${e.label}` : e.label, lat: e.lat, lng: e.lng, zoom: e.zoom });
+  const pick = (a: AreaInfo) => {
+    onSelect({ kind: "area", area: a });
     setQuery("");
     setOpen(false);
   };
 
   const activeLabel =
-    selection.kind === "area" ? selection.label : selection.kind === "polygon" ? "Custom drawn area" : null;
+    selection.kind === "area"
+      ? selection.area.nameEn
+      : selection.kind === "polygon"
+        ? "Custom drawn area"
+        : null;
 
   return (
     <div ref={boxRef} className="relative w-[340px] max-w-[calc(100vw-120px)]">
@@ -119,7 +101,7 @@ export default function SearchBar({
               if (e.key === "Enter" && results.length) pick(results[0]);
               if (e.key === "Escape") setOpen(false);
             }}
-            placeholder="Search area or sub-area…"
+            placeholder="Search any area — town, resort, district…"
             className="flex-1 bg-transparent outline-none text-sm font-medium"
             style={{ color: UI.text }}
           />
@@ -140,24 +122,36 @@ export default function SearchBar({
       </div>
 
       {open && results.length > 0 && (
-        <div className="absolute top-12 left-0 right-0 glass-dark rounded-xl overflow-hidden py-1.5 max-h-[320px] overflow-y-auto ps-scroll">
-          {results.map((e) => (
-            <button
-              key={e.slugs.join(",")}
-              onClick={() => pick(e)}
-              className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left hover:bg-white/[0.07] transition-colors"
-            >
-              <MapPin size={13} style={{ color: e.sub ? UI.oliveLight : UI.green }} className="shrink-0" />
-              <span className="flex-1 min-w-0">
-                <span className="text-sm font-medium truncate block" style={{ color: UI.text }}>
-                  {e.sub ? `${e.sub} · ${e.label}` : e.label}
+        <div className="absolute top-12 left-0 right-0 glass-dark rounded-xl overflow-hidden py-1.5 max-h-[340px] overflow-y-auto ps-scroll">
+          {results.map((a) => {
+            const sub = crumb(a);
+            return (
+              <button
+                key={a.areaId}
+                onClick={() => pick(a)}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left hover:bg-white/[0.07] transition-colors"
+              >
+                <MapPin
+                  size={13}
+                  style={{ color: a.areaType === "district" ? UI.green : UI.oliveLight }}
+                  className="shrink-0"
+                />
+                <span className="flex-1 min-w-0">
+                  <span className="text-sm font-medium truncate block" style={{ color: UI.text }}>
+                    {a.nameEn}
+                  </span>
+                  {sub && (
+                    <span className="text-[11px] block" style={{ color: UI.faint }}>
+                      {sub}
+                    </span>
+                  )}
                 </span>
-              </span>
-              <span className="text-xs shrink-0" style={{ color: UI.faint }}>
-                {e.count.toLocaleString("en-GB")}
-              </span>
-            </button>
-          ))}
+                <span className="text-xs shrink-0" style={{ color: UI.faint }}>
+                  {a.listingCount.toLocaleString("en-GB")}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

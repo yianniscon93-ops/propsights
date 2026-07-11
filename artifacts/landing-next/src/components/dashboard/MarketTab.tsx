@@ -1,199 +1,606 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Star } from "lucide-react";
-import type { OccMetric, OccWindow, SelectionStats } from "@/lib/dashboard/types";
-import { occOf } from "@/lib/dashboard/types";
-import { fmtEuro, fmtInt, fmtPct, occupancyColor, TYPE_GROUP_LABELS } from "@/lib/dashboard/format";
-import { areaLabel } from "@/lib/dashboard/areas";
+import { Info } from "lucide-react";
+import type { MarketResponse, WeeklyRow } from "@/lib/dashboard/types";
+import { fmtEuro, fmtInt, fmtPct, TYPE_GROUP_LABELS } from "@/lib/dashboard/format";
+import { AMENITIES } from "@/lib/dashboard/filters";
+import { currentWeekMonday } from "@/lib/dashboard/weeks";
+import type { ExplainerId } from "@/lib/dashboard/explain";
 import { UI } from "./tokens";
-import { LineAreaChart } from "./charts";
+import { TrendChart, BarsChart, GapBars, type TrendSeries } from "./charts";
+import Explain, { StatLabel } from "./Explain";
 
 const fmtWeek = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
-export default function MarketTab({
-  stats,
-  metric,
-  window_,
-}: {
-  stats: SelectionStats | null;
-  metric: OccMetric;
-  window_: OccWindow;
-}) {
-  const occ = stats ? occOf(stats, metric, window_) : null;
-  const noise =
-    stats == null
-      ? null
-      : window_ === "todate"
-        ? (stats.rawOccTodate ?? 0) - (stats.effOccTodate ?? 0)
-        : (stats.rawOccFwd60 ?? 0) - (stats.effOccFwd60 ?? 0);
-  const mixTotal = stats?.typeMix.reduce((s, m) => s + m.count, 0) ?? 0;
+const AMENITY_LABEL = new Map(AMENITIES.map((a) => [a.key, a.label]));
+const NEG = "#D98B6A"; // warm terracotta for declines — no cool tones
 
-  const cards = [
-    { label: "Listings", value: stats ? fmtInt(stats.listingCount) : "—" },
+type MetricKey = "effOcc" | "medianAdr" | "revpar" | "bookings" | "listings";
+
+function metricOf(w: WeeklyRow | undefined, m: MetricKey): number | null {
+  return w ? (w[m] as number | null) : null;
+}
+
+/** Range aggregates: averages for rates/occupancy, totals for volumes.
+ * Occupancy is weighted by weekly listing counts so big weeks count more. */
+function aggregate(rows: WeeklyRow[]) {
+  const nums = (k: keyof WeeklyRow) =>
+    rows.map((r) => r[k] as number | null).filter((v): v is number => v != null);
+  const mean = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
+  const sum = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) : null);
+  const occRows = rows.filter((r) => r.effOcc != null);
+  const occW = occRows.reduce((s, r) => s + (r.listings ?? 1), 0);
+  return {
+    listings: mean(nums("listings")),
+    effOcc: occW ? occRows.reduce((s, r) => s + r.effOcc! * (r.listings ?? 1), 0) / occW : null,
+    medianAdr: mean(nums("medianAdr")),
+    revpar: mean(nums("revpar")),
+    bookings: sum(nums("bookings")),
+    revenueEst: rows.some((r) => r.revenueEst != null) ? sum(nums("revenueEst")) : null,
+  };
+}
+
+function DeltaBadge({ delta, fmt, suffix }: { delta: number | null; fmt: (v: number) => string; suffix?: string }) {
+  if (delta == null)
+    return (
+      <span className="text-[11px]" style={{ color: UI.faint }}>
+        —
+      </span>
+    );
+  const up = delta >= 0;
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-[11px] font-bold px-1.5 py-0.5 rounded-md"
+      style={{
+        color: up ? UI.green : NEG,
+        background: up ? "rgba(143,204,128,0.1)" : "rgba(217,139,106,0.1)",
+      }}
+    >
+      {up ? "▲" : "▼"} {fmt(Math.abs(delta))}
+      {suffix}
+    </span>
+  );
+}
+
+export default function MarketTab({ market }: { market: MarketResponse | null }) {
+  const cur = currentWeekMonday();
+  const weekly = market?.weekly ?? [];
+  const realized = weekly.filter((w) => w.weekStart < cur);
+  // KPIs aggregate over the completed weeks inside the picked range so
+  // they respond to the calendar. All-forward ranges show booking pace.
+  const scope = realized.length ? realized : weekly;
+  const kpiIsForward = realized.length === 0 && weekly.length > 0;
+  const agg = aggregate(scope);
+  // WoW badge: the two most recent weeks inside the scope.
+  const kpiWeek = scope.at(-1);
+  const prevWeek = scope.length >= 2 ? scope.at(-2) : undefined;
+
+  const kpis: Array<{
+    id: ExplainerId;
+    label: string;
+    value: string;
+    delta: number | null;
+    deltaFmt: (v: number) => string;
+    deltaSuffix?: string;
+    accent?: boolean;
+  }> = [
     {
-      label: `${metric === "eff" ? "Effective" : "Raw"} occupancy`,
-      value: fmtPct(occ),
+      id: "listings",
+      label: "Listings tracked",
+      value: fmtInt(agg.listings),
+      delta: null,
+      deltaFmt: fmtInt,
+    },
+    {
+      id: kpiIsForward ? "on_the_books" : "eff_occ",
+      label: kpiIsForward ? "Occupancy · on the books" : "Occupancy",
+      value: fmtPct(agg.effOcc),
+      delta:
+        prevWeek && metricOf(kpiWeek, "effOcc") != null && metricOf(prevWeek, "effOcc") != null
+          ? metricOf(kpiWeek, "effOcc")! - metricOf(prevWeek, "effOcc")!
+          : null,
+      deltaFmt: (v) => v.toFixed(1),
+      deltaSuffix: "pp",
       accent: true,
     },
-    { label: "Booking pace · next 60d", value: stats ? fmtPct(stats.effOccFwd60) : "—" },
-    { label: "Median rate", value: stats ? fmtEuro(stats.medianRate) : "—" },
-    { label: "Average rate", value: stats ? fmtEuro(stats.avgRate) : "—" },
     {
-      label: "Calendar noise",
-      value: noise != null && stats?.listingCount ? `${noise.toFixed(1)} pts` : "—",
-      hint: "raw − effective",
+      id: "median_adr",
+      label: "Median nightly rate",
+      value: fmtEuro(agg.medianAdr != null ? Math.round(agg.medianAdr) : null),
+      delta:
+        prevWeek && metricOf(kpiWeek, "medianAdr") != null && metricOf(prevWeek, "medianAdr") != null
+          ? metricOf(kpiWeek, "medianAdr")! - metricOf(prevWeek, "medianAdr")!
+          : null,
+      deltaFmt: (v) => fmtEuro(Math.round(v)),
     },
-    { label: "Superhost share", value: stats ? fmtPct(stats.superhostShare) : "—" },
+    {
+      id: "revpar",
+      label: "RevPAR",
+      value: fmtEuro(agg.revpar != null ? Math.round(agg.revpar) : null),
+      delta:
+        prevWeek && metricOf(kpiWeek, "revpar") != null && metricOf(prevWeek, "revpar") != null
+          ? metricOf(kpiWeek, "revpar")! - metricOf(prevWeek, "revpar")!
+          : null,
+      deltaFmt: (v) => fmtEuro(Math.round(v)),
+    },
+    {
+      id: "bookings",
+      label: "Bookings · total",
+      value: fmtInt(agg.bookings),
+      delta:
+        prevWeek && metricOf(kpiWeek, "bookings") != null && metricOf(prevWeek, "bookings") != null
+          ? metricOf(kpiWeek, "bookings")! - metricOf(prevWeek, "bookings")!
+          : null,
+      deltaFmt: fmtInt,
+    },
   ];
+  if (agg.revenueEst != null) {
+    kpis.push({
+      id: "revenue_est",
+      label: "Est. revenue · total",
+      value: fmtEuro(agg.revenueEst),
+      delta:
+        prevWeek?.revenueEst != null && kpiWeek?.revenueEst != null
+          ? kpiWeek.revenueEst - prevWeek.revenueEst
+          : null,
+      deltaFmt: (v) => fmtEuro(Math.round(v)),
+    });
+  }
+
+  // Delta chips vs benchmarks (same filters — decision 11 Jul 2026),
+  // aggregated over the same weeks as the KPIs.
+  const scopeWeeks = new Set(scope.map((w) => w.weekStart));
+  const chips = (market?.benchmarks ?? [])
+    .map((b) => {
+      const bAgg = aggregate(b.weekly.filter((w) => scopeWeeks.has(w.weekStart)));
+      const occD = agg.effOcc != null && bAgg.effOcc != null ? agg.effOcc - bAgg.effOcc : null;
+      const adrD =
+        agg.medianAdr != null && bAgg.medianAdr != null && bAgg.medianAdr !== 0
+          ? (100 * (agg.medianAdr - bAgg.medianAdr)) / bAgg.medianAdr
+          : null;
+      if (occD == null && adrD == null) return null;
+      return { label: b.label, occD, adrD };
+    })
+    .filter((c): c is NonNullable<typeof c> => c != null);
+
+  // Gap chart vs the closest benchmark (district when available, else island).
+  const gapBench = market?.benchmarks?.[0] ?? null;
+  const gapData = gapBench
+    ? weekly.map((w) => {
+        const bw = gapBench.weekly.find((x) => x.weekStart === w.weekStart);
+        return {
+          label: fmtWeek(w.weekStart),
+          value: w.effOcc != null && bw?.effOcc != null ? Math.round((w.effOcc - bw.effOcc) * 10) / 10 : null,
+        };
+      })
+    : [];
+
+  // Strongest & weakest completed weeks in range.
+  const ranked = [...realized].filter((w) => w.effOcc != null).sort((a, b) => b.effOcc! - a.effOcc!);
+  const bestWeeks = ranked.slice(0, 3);
+  const worstWeeks = ranked.length > 3 ? ranked.slice(-3).reverse() : [];
+
+  const benchSeries = (metric: MetricKey): TrendSeries[] =>
+    (market?.benchmarks ?? []).slice(0, 2).map((b, i) => ({
+      label: b.label,
+      color: i === 0 ? UI.oliveLight : "#C9B891",
+      dashed: i !== 0,
+      data: b.weekly.map((w) => ({ x: w.weekStart, y: w[metric] as number | null })),
+    }));
+
+  const mainSeries = (metric: MetricKey, label: string): TrendSeries => ({
+    label,
+    color: UI.green,
+    data: weekly.map((w) => ({ x: w.weekStart, y: w[metric] as number | null })),
+  });
+
+  const snap = market?.snapshot ?? null;
+  const mixTotal = snap?.typeMix.reduce((s, m) => s + m.count, 0) ?? 0;
+  const bedTotal = snap?.bedrooms.reduce((s, b) => s + b.count, 0) ?? 0;
 
   return (
     <div>
-      {/* KPI cards */}
+      {market?.filtersIgnored && (
+        <div
+          className="flex items-center gap-2.5 rounded-xl px-4 py-3 mb-2.5 text-[13px]"
+          style={{ background: "rgba(217,139,106,0.08)", border: "1px solid rgba(217,139,106,0.25)", color: UI.text }}
+        >
+          <Info size={15} style={{ color: NEG }} className="shrink-0" />
+          Attribute filters aren&apos;t available yet for this small area type — showing all its
+          listings instead. Pick a town, resort or district to filter.
+        </div>
+      )}
+
+      {/* KPI cards — latest completed week in the picked range, with WoW */}
       <motion.div
-        key={stats?.listingCount ?? "loading"}
+        key={kpiWeek?.weekStart ?? "loading"}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
-        className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2.5"
+        className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5"
       >
-        {cards.map((c) => (
+        {kpis.map((c) => (
           <div key={c.label} className="glass-card rounded-2xl px-4 py-3.5">
-            <p
-              className="font-display font-bold text-2xl leading-none"
-              style={{ color: c.accent ? UI.green : UI.text }}
-            >
-              {c.value}
-            </p>
-            <p className="text-[11px] mt-2 uppercase tracking-wider font-medium" style={{ color: UI.muted }}>
-              {c.label}
-            </p>
-            {"hint" in c && c.hint && (
-              <p className="text-[11px]" style={{ color: UI.faint }}>
-                {c.hint}
+            <div className="flex items-center justify-between gap-1">
+              <p className="font-display font-bold text-2xl leading-none" style={{ color: c.accent ? UI.green : UI.text }}>
+                {c.value}
               </p>
-            )}
+              <DeltaBadge delta={c.delta} fmt={c.deltaFmt} suffix={c.deltaSuffix} />
+            </div>
+            <p className="text-[11px] mt-2 uppercase tracking-wider font-medium flex items-center gap-1.5" style={{ color: UI.muted }}>
+              {c.label}
+              <Explain id={c.id} align="left" />
+            </p>
           </div>
         ))}
       </motion.div>
+      {scope.length > 0 && (
+        <p className="text-[11px] mt-1.5 flex items-center gap-1.5" style={{ color: UI.faint }}>
+          {kpiIsForward
+            ? `On the books across ${scope.length} upcoming ${scope.length === 1 ? "week" : "weeks"}`
+            : `Across ${scope.length} completed ${scope.length === 1 ? "week" : "weeks"} (${fmtWeek(scope[0].weekStart)} – ${fmtWeek(scope[scope.length - 1].weekStart)})`}
+          {" "}· averages for rates & occupancy, totals for bookings & revenue
+          <Explain id="range_agg" align="left" />
+          {prevWeek && (
+            <>
+              · badge = change in the latest week
+              <Explain id="wow" align="left" />
+            </>
+          )}
+        </p>
+      )}
 
-      {/* Trend + mix */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 mt-2.5">
-        <div className="glass-card rounded-2xl p-5 lg:col-span-2">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: UI.text }}>
-              Weekly {metric === "eff" ? "effective" : "raw"} occupancy
-            </p>
-            {stats && stats.weekly.length > 0 && stats.weekly[stats.weekly.length - 1].medianAdr != null && (
-              <p className="text-xs" style={{ color: UI.muted }}>
-                latest median ADR{" "}
-                <span className="font-semibold" style={{ color: UI.text }}>
-                  {fmtEuro(stats.weekly[stats.weekly.length - 1].medianAdr)}
+      {/* Delta chips vs district & island */}
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: UI.muted }}>
+            Compared to
+            <Explain id="vs_benchmark" align="left" />
+          </span>
+          {chips.map((c) => (
+            <span
+              key={c.label}
+              className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs glass-card"
+            >
+              <span className="font-semibold" style={{ color: UI.text }}>
+                {c.label}
+              </span>
+              {c.occD != null && (
+                <span className="font-bold" style={{ color: c.occD >= 0 ? UI.green : NEG }}>
+                  {c.occD >= 0 ? "+" : ""}
+                  {c.occD.toFixed(1)}pp occupancy
                 </span>
-              </p>
-            )}
+              )}
+              {c.adrD != null && (
+                <span className="font-bold" style={{ color: c.adrD >= 0 ? UI.green : NEG }}>
+                  {c.adrD >= 0 ? "+" : ""}
+                  {c.adrD.toFixed(0)}% rate
+                </span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Trends — split at the current week (realized | on the books) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 mt-2.5">
+        <div className="glass-card rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <StatLabel id="eff_occ" align="left">
+              Weekly occupancy
+            </StatLabel>
+            <span className="text-[11px]" style={{ color: UI.faint }}>
+              %
+            </span>
           </div>
-          <LineAreaChart
-            data={(stats?.weekly ?? []).map((w) => ({
-              x: w.weekStart,
-              y: metric === "eff" ? w.effOcc : w.rawOcc,
-            }))}
+          <TrendChart
+            main={mainSeries("effOcc", "Selection")}
+            benchmarks={benchSeries("effOcc")}
+            splitX={cur}
             yFmt={(v) => `${v.toFixed(1)}%`}
             xFmt={fmtWeek}
-            height={110}
-            emptyLabel="Not enough weekly history yet"
+            emptyLabel="No weekly data in this range"
           />
         </div>
-
         <div className="glass-card rounded-2xl p-5">
-          <p className="text-xs font-bold uppercase tracking-wider mb-3.5" style={{ color: UI.text }}>
-            Property mix
-          </p>
-          <div className="flex flex-col gap-3">
-            {(stats?.typeMix ?? []).map((m) => {
-              const share = mixTotal ? (100 * m.count) / mixTotal : 0;
-              return (
-                <div key={m.group}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium" style={{ color: UI.text }}>
-                      {TYPE_GROUP_LABELS[m.group]}
-                    </span>
-                    <span className="text-xs font-semibold" style={{ color: UI.muted }}>
-                      {fmtInt(m.count)} · {share.toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
-                    <motion.div
-                      className="h-full rounded-full"
-                      style={{ background: "linear-gradient(90deg,#4A5E3A,#8FCC80)" }}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${share}%` }}
-                      transition={{ duration: 0.5 }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-            {!stats?.typeMix.length && (
-              <p className="text-sm" style={{ color: UI.faint }}>
-                No listings in selection.
-              </p>
-            )}
+          <div className="flex items-center justify-between mb-3">
+            <StatLabel id="median_adr" align="left">
+              Weekly median rate
+            </StatLabel>
+            <span className="text-[11px]" style={{ color: UI.faint }}>
+              € / night
+            </span>
           </div>
+          <TrendChart
+            main={mainSeries("medianAdr", "Selection")}
+            benchmarks={benchSeries("medianAdr")}
+            splitX={cur}
+            yFmt={(v) => fmtEuro(v)}
+            xFmt={fmtWeek}
+            emptyLabel="No weekly data in this range"
+          />
+        </div>
+        <div className="glass-card rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <StatLabel id="bookings" align="left">
+              Weekly bookings
+            </StatLabel>
+            <span className="text-[11px]" style={{ color: UI.faint }}>
+              detected
+            </span>
+          </div>
+          <TrendChart
+            main={mainSeries("bookings", "Selection")}
+            benchmarks={[]}
+            splitX={cur}
+            yFmt={(v) => fmtInt(v)}
+            xFmt={fmtWeek}
+            emptyLabel="No weekly data in this range"
+          />
         </div>
       </div>
 
-      {/* Top listings */}
-      <div className="glass-card rounded-2xl p-5 mt-2.5">
-        <p className="text-xs font-bold uppercase tracking-wider mb-3.5" style={{ color: UI.text }}>
-          Top listings · by effective occupancy
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-          {(stats?.topListings ?? []).map((l) => {
-            const lo = occOf(l, metric, window_);
-            return (
-              <div
-                key={l.id}
-                className="rounded-xl p-3.5 transition-colors hover:bg-white/[0.05]"
-                style={{ border: `1px solid ${UI.border}` }}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-semibold leading-snug" style={{ color: UI.text }}>
-                    {l.name}
-                  </p>
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0 mt-1.5"
-                    style={{ background: occupancyColor(lo) }}
-                  />
-                </div>
-                <p className="text-[11px] mt-1.5" style={{ color: UI.muted }}>
-                  {areaLabel(l.areaSlug)} · {l.propertyType ?? "—"} · {l.bedrooms ?? "—"} bed
-                </p>
-                <div className="flex items-center justify-between mt-2.5">
-                  <span className="text-sm font-bold" style={{ color: UI.green }}>
-                    {fmtPct(lo)}
-                  </span>
-                  <span className="text-xs" style={{ color: UI.muted }}>
-                    {fmtEuro(l.nightlyRate)}/n
-                    {l.rating != null && (
-                      <>
-                        {" · "}
-                        <Star size={9} fill={UI.oliveLight} color={UI.oliveLight} className="inline -mt-px" />{" "}
-                        {l.rating.toFixed(2)}
-                      </>
-                    )}
-                  </span>
-                </div>
+      {/* Gap vs benchmark + strongest/weakest weeks */}
+      {(gapBench || bestWeeks.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 mt-2.5">
+          {gapBench && (
+            <div className="glass-card rounded-2xl p-5 lg:col-span-2">
+              <div className="flex items-center justify-between mb-3">
+                <StatLabel id="benchmark_gap" align="left">
+                  Occupancy gap vs {gapBench.label}
+                </StatLabel>
+                <span className="text-[11px]" style={{ color: UI.faint }}>
+                  percentage points per week · above zero = you outperform
+                </span>
               </div>
-            );
-          })}
-          {!stats?.topListings.length && (
-            <p className="text-sm" style={{ color: UI.faint }}>
-              Nothing to show yet.
-            </p>
+              <GapBars
+                data={gapData}
+                yFmt={(v) => `${v.toFixed(1)}pp`}
+                emptyLabel="No overlapping weeks to compare"
+              />
+            </div>
+          )}
+          {bestWeeks.length > 0 && (
+            <div className={`glass-card rounded-2xl p-5 ${gapBench ? "" : "lg:col-span-3"}`}>
+              <div className="mb-3">
+                <StatLabel id="best_weeks" align="left">
+                  Strongest & weakest weeks
+                </StatLabel>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {bestWeeks.map((w) => (
+                  <WeekRow key={w.weekStart} w={w} tone="best" />
+                ))}
+                {worstWeeks.length > 0 && (
+                  <>
+                    <div className="h-px my-1" style={{ background: UI.border }} />
+                    {worstWeeks.map((w) => (
+                      <WeekRow key={w.weekStart} w={w} tone="worst" />
+                    ))}
+                  </>
+                )}
+              </div>
+            </div>
           )}
         </div>
+      )}
+
+      {/* Supply-shift context for the trends (contract §5) */}
+      <div className="glass-card rounded-2xl p-5 mt-2.5">
+        <div className="flex items-center justify-between mb-3">
+          <StatLabel id="listing_count_trend" align="left">
+            Listings tracked per week
+          </StatLabel>
+          <span className="text-[11px]" style={{ color: UI.faint }}>
+            read occupancy moves together with supply
+          </span>
+        </div>
+        <TrendChart
+          main={mainSeries("listings", "Selection")}
+          benchmarks={[]}
+          splitX={cur}
+          yFmt={(v) => fmtInt(v)}
+          xFmt={fmtWeek}
+          height={72}
+          emptyLabel="No weekly data in this range"
+        />
+      </div>
+
+      {/* Current-state snapshot: distribution + supply mix */}
+      {snap && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 mt-2.5">
+          <div className="glass-card rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <StatLabel id="quartiles" align="left">
+                Price & occupancy spread
+              </StatLabel>
+              <span
+                className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1"
+                style={{ background: "rgba(255,255,255,0.06)", color: UI.muted }}
+              >
+                today <Explain id="current_state" align="right" />
+              </span>
+            </div>
+            <QuartileBar
+              label="Nightly rate"
+              q={snap.adrQuartiles}
+              fmt={(v) => fmtEuro(Math.round(v))}
+            />
+            <div className="mt-5">
+              <QuartileBar label="Occupancy" q={snap.occQuartiles} fmt={(v) => `${v.toFixed(0)}%`} />
+            </div>
+            <p className="text-[12px] mt-5 flex items-center gap-1.5" style={{ color: UI.muted }}>
+              Superhost share{" "}
+              <span className="font-bold" style={{ color: UI.text }}>
+                {fmtPct(snap.superhostShare)}
+              </span>
+              <Explain id="superhost" align="left" />
+            </p>
+          </div>
+
+          <div className="glass-card rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <StatLabel id="supply_mix" align="left">
+                Bedrooms
+              </StatLabel>
+              <span className="text-[11px]" style={{ color: UI.faint }}>
+                {fmtInt(bedTotal)} listings
+              </span>
+            </div>
+            <BarsChart
+              data={snap.bedrooms.map((b) => ({ label: b.label, value: b.count }))}
+              yFmt={(v) => `${fmtInt(v)} listings`}
+              height={110}
+              highlightMax
+              emptyLabel="No listings in selection"
+            />
+            <div className="mt-4 flex flex-col gap-2.5">
+              {snap.typeMix.map((m) => {
+                const share = mixTotal ? (100 * m.count) / mixTotal : 0;
+                return (
+                  <div key={m.group}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[12px] font-medium" style={{ color: UI.text }}>
+                        {TYPE_GROUP_LABELS[m.group]}
+                      </span>
+                      <span className="text-[11px] font-semibold" style={{ color: UI.muted }}>
+                        {fmtInt(m.count)} · {share.toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{ background: "linear-gradient(90deg,#4A5E3A,#8FCC80)" }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${share}%` }}
+                        transition={{ duration: 0.5 }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="glass-card rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <StatLabel id="supply_mix" align="left">
+                Amenities
+              </StatLabel>
+              <span className="text-[11px]" style={{ color: UI.faint }}>
+                % of listings that have it
+              </span>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              {snap.amenities.slice(0, 8).map((a) => (
+                <div key={a.key}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[12px] font-medium" style={{ color: UI.text }}>
+                      {AMENITY_LABEL.get(a.key) ?? a.key}
+                    </span>
+                    <span className="text-[11px] font-semibold" style={{ color: UI.muted }}>
+                      {a.share.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
+                    <div
+                      className="h-full rounded-full"
+                      style={{ background: "linear-gradient(90deg,#6B7B4F,#A8C290)", width: `${a.share}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+              {!snap.amenities.length && (
+                <p className="text-sm" style={{ color: UI.faint }}>
+                  No amenity data for this selection.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One row of the strongest/weakest-weeks card. */
+function WeekRow({ w, tone }: { w: WeeklyRow; tone: "best" | "worst" }) {
+  const color = tone === "best" ? UI.green : NEG;
+  return (
+    <div className="flex items-center justify-between gap-2 py-1">
+      <span className="text-[12.5px] font-semibold w-16 shrink-0" style={{ color: UI.text }}>
+        {fmtWeek(w.weekStart)}
+      </span>
+      <span className="text-[12.5px] font-bold w-14 text-right" style={{ color }}>
+        {fmtPct(w.effOcc)}
+      </span>
+      <span className="text-[12px] w-14 text-right" style={{ color: UI.muted }}>
+        {fmtEuro(w.medianAdr)}
+      </span>
+      <span className="text-[11px] flex-1 text-right" style={{ color: UI.faint }}>
+        {w.bookings != null ? `${fmtInt(w.bookings)} bookings` : ""}
+      </span>
+    </div>
+  );
+}
+
+/** p25 → median → p75 as a range bar with labelled markers. */
+function QuartileBar({
+  label,
+  q,
+  fmt,
+}: {
+  label: string;
+  q: [number, number, number] | null;
+  fmt: (v: number) => string;
+}) {
+  if (!q) {
+    return (
+      <div>
+        <p className="text-[12px] font-medium mb-1.5" style={{ color: UI.text }}>
+          {label}
+        </p>
+        <p className="text-sm" style={{ color: UI.faint }}>
+          Not enough data.
+        </p>
+      </div>
+    );
+  }
+  const [p25, med, p75] = q;
+  const lo = p25 * 0.75;
+  const hi = p75 * 1.2;
+  const pos = (v: number) => `${Math.max(0, Math.min(100, (100 * (v - lo)) / (hi - lo)))}%`;
+  return (
+    <div>
+      <p className="text-[12px] font-medium mb-2" style={{ color: UI.text }}>
+        {label}
+      </p>
+      <div className="relative h-2 rounded-full" style={{ background: "rgba(255,255,255,0.07)" }}>
+        <div
+          className="absolute h-full rounded-full"
+          style={{
+            left: pos(p25),
+            width: `calc(${pos(p75)} - ${pos(p25)})`,
+            background: "linear-gradient(90deg,rgba(143,204,128,0.35),rgba(143,204,128,0.7))",
+          }}
+        />
+        <div
+          className="absolute w-[3px] h-4 -top-1 rounded-full"
+          style={{ left: pos(med), background: UI.green }}
+        />
+      </div>
+      <div className="flex justify-between mt-2 text-[11px]" style={{ color: UI.muted }}>
+        <span>
+          25% under <b style={{ color: UI.text }}>{fmt(p25)}</b>
+        </span>
+        <span>
+          median <b style={{ color: UI.green }}>{fmt(med)}</b>
+        </span>
+        <span>
+          25% over <b style={{ color: UI.text }}>{fmt(p75)}</b>
+        </span>
       </div>
     </div>
   );

@@ -3,39 +3,49 @@
 import { useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
-import type { OccMetric, OccWindow, PointRow, PolygonCoords } from "@/lib/dashboard/types";
-import { occOf } from "@/lib/dashboard/types";
+import type { AreaInfo, OccWindow, PointRow, PolygonCoords } from "@/lib/dashboard/types";
 import { occupancyColor } from "@/lib/dashboard/format";
 
 const CYPRUS_CENTER: [number, number] = [34.98, 33.25];
 const CYPRUS_ZOOM = 9;
 
+/** Below this zoom, pins are decorative and named-area markers carry the
+ * interaction (zoom-gated pins — product decision 11 Jul 2026). */
+const PIN_ZOOM = 11;
+
 function radiusForZoom(z: number): number {
   return z >= 13 ? 5 : z >= 11 ? 3.5 : 2.4;
 }
 
+function effOcc(p: PointRow, window_: OccWindow): number | null {
+  return window_ === "todate" ? p.effOccTodate : p.effOccFwd60;
+}
+
 /**
  * All listings as canvas-rendered dots (up to ~15k). Imperative Leaflet
- * layer — a React element per dot would be far too slow.
+ * layer — a React element per dot would be far too slow. Dots are only
+ * interactive once zoomed past PIN_ZOOM; at island zoom they are texture.
  */
 function PointsLayer({
   points,
-  metric,
   window_,
   drawing,
+  interactive,
   onHover,
   onPick,
 }: {
   points: PointRow[];
-  metric: OccMetric;
   window_: OccWindow;
   drawing: boolean;
+  interactive: boolean;
   onHover: (id: string | null) => void;
   onPick: (id: string) => void;
 }) {
   const map = useMap();
   const drawingRef = useRef(drawing);
   drawingRef.current = drawing;
+  const interactiveRef = useRef(interactive);
+  interactiveRef.current = interactive;
 
   useEffect(() => {
     const renderer = L.canvas({ padding: 0.3 });
@@ -49,11 +59,11 @@ function PointsLayer({
         radius: baseRadius,
         weight: 0.7,
         color: "#FFFFFF",
-        fillColor: occupancyColor(occOf(p, metric, window_)),
+        fillColor: occupancyColor(effOcc(p, window_)),
         fillOpacity: 0.85,
       });
       m.on("mouseover", () => {
-        if (drawingRef.current) return;
+        if (drawingRef.current || !interactiveRef.current) return;
         m.setStyle({ weight: 2, color: "#1F2A16" });
         onHover(p.id);
       });
@@ -62,7 +72,7 @@ function PointsLayer({
         onHover(null);
       });
       m.on("click", (e) => {
-        if (drawingRef.current) return;
+        if (drawingRef.current || !interactiveRef.current) return;
         L.DomEvent.stopPropagation(e);
         onPick(p.id);
       });
@@ -80,8 +90,72 @@ function PointsLayer({
       map.off("zoomend", onZoom);
       group.remove();
     };
-  }, [map, points, metric, window_, onHover, onPick]);
+  }, [map, points, window_, onHover, onPick]);
 
+  return null;
+}
+
+/**
+ * Named-area markers shown at island zoom: districts when zoomed far out,
+ * towns/resorts as you get closer. Clicking one selects the area.
+ */
+function AreaMarkersLayer({
+  areas,
+  zoom,
+  drawing,
+  onAreaPick,
+}: {
+  areas: AreaInfo[];
+  zoom: number;
+  drawing: boolean;
+  onAreaPick: (a: AreaInfo) => void;
+}) {
+  const map = useMap();
+  const drawingRef = useRef(drawing);
+  drawingRef.current = drawing;
+
+  useEffect(() => {
+    if (zoom >= PIN_ZOOM || drawing) return;
+    const wanted: AreaInfo[] =
+      zoom < 10
+        ? areas.filter((a) => a.areaType === "district")
+        : areas.filter(
+            (a) =>
+              (a.areaType === "municipality" || a.areaType === "tourist_area") &&
+              a.listingCount >= 30
+          );
+
+    const group = L.layerGroup();
+    for (const a of wanted) {
+      if (a.lat == null || a.lng == null) continue;
+      const icon = L.divIcon({
+        className: "",
+        html: `<span class="ps-area-pill">${a.nameEn}<b>${a.listingCount.toLocaleString("en-GB")}</b></span>`,
+        iconSize: undefined,
+      });
+      const m = L.marker([a.lat, a.lng], { icon, riseOnHover: true });
+      m.on("click", (e) => {
+        if (drawingRef.current) return;
+        L.DomEvent.stopPropagation(e);
+        onAreaPick(a);
+      });
+      group.addLayer(m);
+    }
+    group.addTo(map);
+    return () => {
+      group.remove();
+    };
+  }, [map, areas, zoom, drawing, onAreaPick]);
+
+  return null;
+}
+
+function ZoomTracker({ onZoom }: { onZoom: (z: number) => void }) {
+  const map = useMapEvents({
+    zoomend() {
+      onZoom(map.getZoom());
+    },
+  });
   return null;
 }
 
@@ -186,27 +260,31 @@ function FitPolygon({
 
 export default function MarketMap({
   points,
-  metric,
+  areas,
   window_,
   drawing,
   polygon,
   focus,
   onHover,
   onPick,
+  onAreaPick,
   onPolygonComplete,
   onDrawCancel,
 }: {
   points: PointRow[];
-  metric: OccMetric;
+  areas: AreaInfo[];
   window_: OccWindow;
   drawing: boolean;
   polygon: PolygonCoords | null;
   focus: { lat: number; lng: number; zoom: number } | null;
   onHover: (id: string | null) => void;
   onPick: (id: string) => void;
+  onAreaPick: (a: AreaInfo) => void;
   onPolygonComplete: (poly: PolygonCoords) => void;
   onDrawCancel: () => void;
 }) {
+  const [zoom, setZoom] = useState(CYPRUS_ZOOM);
+
   return (
     <MapContainer
       center={CYPRUS_CENTER}
@@ -223,14 +301,18 @@ export default function MarketMap({
         subdomains="abcd"
       />
 
+      <ZoomTracker onZoom={setZoom} />
+
       <PointsLayer
         points={points}
-        metric={metric}
         window_={window_}
         drawing={drawing}
+        interactive={zoom >= PIN_ZOOM}
         onHover={onHover}
         onPick={onPick}
       />
+
+      <AreaMarkersLayer areas={areas} zoom={zoom} drawing={drawing} onAreaPick={onAreaPick} />
 
       {polygon && (
         <Polygon

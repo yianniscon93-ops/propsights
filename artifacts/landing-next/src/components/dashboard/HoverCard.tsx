@@ -2,8 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Award, BedDouble, Heart, MapPin, Ruler, Star, Waves, X } from "lucide-react";
-import type { ListingDetail, OccMetric, OccWindow } from "@/lib/dashboard/types";
-import { occOf } from "@/lib/dashboard/types";
+import type { ListingDetail, OccWindow } from "@/lib/dashboard/types";
 import { AMENITIES } from "@/lib/dashboard/filters";
 import { fmtEuro, fmtPct } from "@/lib/dashboard/format";
 import { areaLabel } from "@/lib/dashboard/areas";
@@ -12,21 +11,20 @@ import { UI } from "./tokens";
 /**
  * Glass detail card for a hovered/pinned listing dot. Details only — no
  * external link yet (product decision until we have own listing pages).
+ * Effective occupancy only (contract: raw never shown).
  */
 export default function HoverCard({
   listing,
   pinned,
-  metric,
   window_,
   onClose,
 }: {
   listing: ListingDetail;
   pinned: boolean;
-  metric: OccMetric;
   window_: OccWindow;
   onClose: () => void;
 }) {
-  const occ = occOf(listing, metric, window_);
+  const occ = window_ === "todate" ? listing.effOccTodate : listing.effOccFwd60;
   const amenityLabels = listing.amenities
     .map((k) => AMENITIES.find((a) => a.key === k)?.label)
     .filter((x): x is string => !!x)
@@ -52,7 +50,7 @@ export default function HoverCard({
 
       <p className="flex items-center gap-1 text-xs mt-1" style={{ color: UI.muted }}>
         <MapPin size={9} style={{ color: UI.oliveMid }} />
-        {areaLabel(listing.areaSlug)} · {listing.propertyType ?? "—"}
+        {listing.areaLabel ?? areaLabel(listing.areaSlug)} · {listing.propertyType ?? "—"}
       </p>
 
       <div className="flex items-end gap-1.5 mt-2.5">
@@ -63,8 +61,7 @@ export default function HoverCard({
           %
         </span>
         <span className="text-[11px] mb-1" style={{ color: UI.faint }}>
-          {metric === "eff" ? "effective" : "raw"} ·{" "}
-          {window_ === "todate" ? "season to date" : "next 60d"}
+          booked · {window_ === "todate" ? "season to date" : "next 60d"}
         </span>
       </div>
 

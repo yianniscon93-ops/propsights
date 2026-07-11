@@ -149,3 +149,30 @@
 .ps-scroll::-webkit-scrollbar { width: 5px; }
 .ps-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 3px; }
 .ps-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* named-area markers at island zoom (zoom-gated pins) */
+.ps-area-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(14, 19, 11, 0.86);
+  border: 1px solid rgba(143, 204, 128, 0.35);
+  box-shadow: 0 4px 16px rgba(6, 10, 4, 0.3);
+  color: #eaf0df;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.ps-area-pill:hover {
+  transform: translate(-50%, -50%) scale(1.06);
+  border-color: rgba(143, 204, 128, 0.7);
+}
+.ps-area-pill b {
+  color: #8fcc80;
+  font-weight: 700;
+}
