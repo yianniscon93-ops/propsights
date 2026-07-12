@@ -156,6 +156,7 @@ function build(): DemoStore {
         totalBookings: Math.floor(rand() * 40),
         proximityBeachMin: Math.round(2 + rand() * 38),
         proximityCenterMin: Math.round(2 + rand() * 30),
+        airbnbUrl: null,
         amenities,
       });
     }

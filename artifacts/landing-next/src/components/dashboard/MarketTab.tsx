@@ -23,7 +23,7 @@ function metricOf(w: WeeklyRow | undefined, m: MetricKey): number | null {
   return w ? (w[m] as number | null) : null;
 }
 
-/** Range aggregates: averages for rates/occupancy, totals for volumes.
+/** Range aggregates: averages for rates/occupancy/volumes-per-listing, totals for raw volumes.
  * Occupancy is weighted by weekly listing counts so big weeks count more. */
 function aggregate(rows: WeeklyRow[]) {
   const nums = (k: keyof WeeklyRow) =>
@@ -32,13 +32,21 @@ function aggregate(rows: WeeklyRow[]) {
   const sum = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) : null);
   const occRows = rows.filter((r) => r.effOcc != null);
   const occW = occRows.reduce((s, r) => s + (r.listings ?? 1), 0);
+  const avgListings = mean(nums("listings"));
+  const totalBookings = sum(nums("bookings"));
+  const hasRevEst = rows.some((r) => r.revenueEst != null);
+  const totalRevEst = hasRevEst ? sum(nums("revenueEst")) : null;
   return {
-    listings: mean(nums("listings")),
+    listings: avgListings,
     effOcc: occW ? occRows.reduce((s, r) => s + r.effOcc! * (r.listings ?? 1), 0) / occW : null,
     medianAdr: mean(nums("medianAdr")),
     revpar: mean(nums("revpar")),
-    bookings: sum(nums("bookings")),
-    revenueEst: rows.some((r) => r.revenueEst != null) ? sum(nums("revenueEst")) : null,
+    bookings: totalBookings,
+    bookingsPerListing:
+      totalBookings != null && avgListings ? totalBookings / avgListings : null,
+    revenueEst: totalRevEst,
+    revenuePerListing:
+      totalRevEst != null && avgListings ? totalRevEst / avgListings : null,
   };
 }
 
@@ -85,6 +93,7 @@ export default function MarketTab({ market }: { market: MarketResponse | null })
     deltaFmt: (v: number) => string;
     deltaSuffix?: string;
     accent?: boolean;
+    explainAlign?: "left" | "center" | "right";
   }> = [
     {
       id: "listings",
@@ -127,25 +136,28 @@ export default function MarketTab({ market }: { market: MarketResponse | null })
     },
     {
       id: "bookings",
-      label: "Bookings · total",
-      value: fmtInt(agg.bookings),
+      label: "Avg bookings / listing",
+      value: agg.bookingsPerListing != null ? agg.bookingsPerListing.toFixed(1) : "—",
       delta:
-        prevWeek && metricOf(kpiWeek, "bookings") != null && metricOf(prevWeek, "bookings") != null
-          ? metricOf(kpiWeek, "bookings")! - metricOf(prevWeek, "bookings")!
+        prevWeek && metricOf(kpiWeek, "bookings") != null && metricOf(prevWeek, "bookings") != null &&
+        kpiWeek?.listings && prevWeek?.listings
+          ? metricOf(kpiWeek, "bookings")! / kpiWeek.listings - metricOf(prevWeek, "bookings")! / prevWeek.listings
           : null,
-      deltaFmt: fmtInt,
+      deltaFmt: (v) => v.toFixed(2),
     },
   ];
-  if (agg.revenueEst != null) {
+  if (agg.revenuePerListing != null) {
     kpis.push({
       id: "revenue_est",
-      label: "Est. revenue · total",
-      value: fmtEuro(agg.revenueEst),
+      label: "Avg est. revenue / listing",
+      value: fmtEuro(Math.round(agg.revenuePerListing)),
       delta:
-        prevWeek?.revenueEst != null && kpiWeek?.revenueEst != null
-          ? kpiWeek.revenueEst - prevWeek.revenueEst
+        prevWeek?.revenueEst != null && kpiWeek?.revenueEst != null &&
+        kpiWeek?.listings && prevWeek?.listings
+          ? kpiWeek.revenueEst / kpiWeek.listings - prevWeek.revenueEst / prevWeek.listings
           : null,
       deltaFmt: (v) => fmtEuro(Math.round(v)),
+      explainAlign: "right",
     });
   }
 
@@ -231,7 +243,7 @@ export default function MarketTab({ market }: { market: MarketResponse | null })
             </div>
             <p className="text-[11px] mt-2 uppercase tracking-wider font-medium flex items-center gap-1.5" style={{ color: UI.muted }}>
               {c.label}
-              <Explain id={c.id} align="left" />
+              <Explain id={c.id} align={c.explainAlign ?? "left"} />
             </p>
           </div>
         ))}
@@ -241,7 +253,7 @@ export default function MarketTab({ market }: { market: MarketResponse | null })
           {kpiIsForward
             ? `On the books across ${scope.length} upcoming ${scope.length === 1 ? "week" : "weeks"}`
             : `Across ${scope.length} completed ${scope.length === 1 ? "week" : "weeks"} (${fmtWeek(scope[0].weekStart)} – ${fmtWeek(scope[scope.length - 1].weekStart)})`}
-          {" "}· averages for rates & occupancy, totals for bookings & revenue
+          {" "}· averages for rates, occupancy & per-listing volumes
           <Explain id="range_agg" align="left" />
           {prevWeek && (
             <>

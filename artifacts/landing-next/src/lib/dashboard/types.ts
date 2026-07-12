@@ -22,13 +22,15 @@ export interface PointRow extends OccFields {
   lng: number;
 }
 
-/** Full row for the hover card / top-listings list. No external URLs (product decision). */
+/** Full row for the hover card / top-listings list. */
 export interface ListingDetail extends OccFields {
   id: string;
   name: string;
   areaSlug: string;
   /** Display name from the serving layer (area_label) — preferred over areaSlug. */
   areaLabel?: string | null;
+  /** Direct Airbnb listing URL from str_listings.airbnb_url — null in demo mode. */
+  airbnbUrl?: string | null;
   lat: number;
   lng: number;
   propertyType: string | null;

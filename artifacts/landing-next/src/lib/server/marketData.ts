@@ -111,6 +111,7 @@ const DETAIL_COLUMNS = (sql: Sql): Frag => sql`
   raw_occ_todate::float, raw_occ_fwd60::float,
   bookings_30d, total_bookings,
   proximity_beach_min, proximity_center_min,
+  airbnb_url,
   ${sql.unsafe(AMENITIES.map((a) => a.key).join(", "))}`;
 
 function rowToDetail(r: postgres.Row): ListingDetail {
@@ -139,6 +140,7 @@ function rowToDetail(r: postgres.Row): ListingDetail {
     totalBookings: r.total_bookings,
     proximityBeachMin: r.proximity_beach_min,
     proximityCenterMin: r.proximity_center_min,
+    airbnbUrl: r.airbnb_url ?? null,
     amenities: AMENITIES.filter((a) => r[a.key] === true).map((a) => a.key),
   };
 }

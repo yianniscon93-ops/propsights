@@ -14,7 +14,7 @@ const CYPRUS_ZOOM = 9;
 const PIN_ZOOM = 11;
 
 function radiusForZoom(z: number): number {
-  return z >= 13 ? 5 : z >= 11 ? 3.5 : 2.4;
+  return z >= 13 ? 7 : z >= 11 ? 5 : 3.5;
 }
 
 function effOcc(p: PointRow, window_: OccWindow): number | null {
@@ -57,18 +57,20 @@ function PointsLayer({
       const m = L.circleMarker([p.lat, p.lng], {
         renderer,
         radius: baseRadius,
-        weight: 0.7,
+        weight: 1.5,
         color: "#FFFFFF",
         fillColor: occupancyColor(effOcc(p, window_)),
-        fillOpacity: 0.85,
+        fillOpacity: 0.9,
       });
       m.on("mouseover", () => {
         if (drawingRef.current || !interactiveRef.current) return;
-        m.setStyle({ weight: 2, color: "#1F2A16" });
+        m.setStyle({ weight: 3, color: "#1F2A16" });
+        m.setRadius(baseRadius + 2);
         onHover(p.id);
       });
       m.on("mouseout", () => {
-        m.setStyle({ weight: 0.7, color: "#FFFFFF" });
+        m.setStyle({ weight: 1.5, color: "#FFFFFF" });
+        m.setRadius(baseRadius);
         onHover(null);
       });
       m.on("click", (e) => {

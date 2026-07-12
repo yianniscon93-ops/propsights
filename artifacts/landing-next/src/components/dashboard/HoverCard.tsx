@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Award, BedDouble, Heart, MapPin, Ruler, Star, Waves, X } from "lucide-react";
+import { Award, BedDouble, ExternalLink, Heart, MapPin, Ruler, Star, Waves, X } from "lucide-react";
 import type { ListingDetail, OccWindow } from "@/lib/dashboard/types";
 import { AMENITIES } from "@/lib/dashboard/filters";
 import { fmtEuro, fmtPct } from "@/lib/dashboard/format";
@@ -9,8 +9,7 @@ import { areaLabel } from "@/lib/dashboard/areas";
 import { UI } from "./tokens";
 
 /**
- * Glass detail card for a hovered/pinned listing dot. Details only — no
- * external link yet (product decision until we have own listing pages).
+ * Glass detail card for a hovered/pinned listing dot.
  * Effective occupancy only (contract: raw never shown).
  */
 export default function HoverCard({
@@ -120,6 +119,19 @@ export default function HoverCard({
           {amenityLabels.join(" · ")}
           {listing.amenities.length > 5 && ` · +${listing.amenities.length - 5} more`}
         </p>
+      )}
+
+      {listing.airbnbUrl && (
+        <a
+          href={listing.airbnbUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90 active:scale-95"
+          style={{ background: "#FF5A5F", color: "#FFFFFF" }}
+        >
+          <ExternalLink size={13} />
+          View on Airbnb
+        </a>
       )}
     </motion.div>
   );

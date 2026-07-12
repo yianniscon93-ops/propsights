@@ -35,12 +35,12 @@ export const EXPLAINERS = {
     text: "Revenue per available rental: nightly rate × occupancy. It combines how much hosts charge with how often they're booked — the single best measure of how hard a market is working.",
   },
   bookings: {
-    title: "Bookings",
-    text: "New reservations we detected on listing calendars that week. It's a demand-speed signal from calendar changes — not an official reservation count from the booking platforms.",
+    title: "Avg bookings per listing",
+    text: "Total new reservations detected across the selection, divided by the average number of listings — so the figure stays comparable regardless of how large or small your selection is.",
   },
   revenue_est: {
-    title: "Est. revenue",
-    text: "A modelled estimate of guest spending, weighted by how confident we are that each calendar block is a real booking. It is an estimate — not reported payouts.",
+    title: "Avg est. revenue per listing",
+    text: "A modelled estimate of guest spending divided by the average listing count in the selection. It's an estimate — not reported payouts — but it normalises for selection size so you can compare areas fairly.",
   },
   wow: {
     title: "Week-over-week change",
@@ -92,7 +92,7 @@ export const EXPLAINERS = {
   },
   range_agg: {
     title: "How these numbers are calculated",
-    text: "Averages (occupancy, rates, RevPAR) and totals (bookings, revenue) across the completed weeks inside your selected dates. If your dates are entirely in the future, they show what's booked so far instead.",
+    text: "Occupancy, rates and RevPAR are averages across completed weeks. Bookings and revenue are per-listing averages so they stay comparable across selections of different sizes. If your dates are entirely in the future, they show what's booked so far instead.",
   },
   benchmark_gap: {
     title: "Gap vs the market",
