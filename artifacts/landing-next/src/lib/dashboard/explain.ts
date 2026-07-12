@@ -112,7 +112,103 @@ export const EXPLAINERS = {
   },
   freshness: {
     title: "Data freshness",
-    text: "Everything on this dashboard is tracked and refreshed daily from live market data. The date shows when data was last collected.",
+    text: "Everything on this dashboard is tracked and refreshed from live market data. The dates show when calendars and bookings were last collected — trust starts with knowing how fresh the numbers are.",
+  },
+  // --- Booking pace (booking_stays / area_pace) ---
+  lead_time: {
+    title: "Booking lead time",
+    text: "How many days before arrival guests book, weighted by nights. It's a lower bound — we detect bookings within about 2 days of them happening. For future months it only reflects bookings made so far; late bookers will pull the true figure down.",
+  },
+  booking_window: {
+    title: "Booking window",
+    text: "For recently completed stays: the share of booked nights that were already reserved a given number of days before arrival. Use it to judge whether an empty calendar N days out is normal or a warning sign.",
+  },
+  stay_mix: {
+    title: "Stay-length mix",
+    text: "The split of bookings by trip length. A growing 15+ night share signals mid-term / digital-nomad demand — which changes what pricing and minimum-stay rules work.",
+  },
+  mid_term: {
+    title: "Mid-term demand",
+    text: "The share of bookings that are 15 nights or longer — remote workers, winter stayers and relocations. These guests book differently and care more about monthly value than nightly price.",
+  },
+  otb_pace: {
+    title: "Pickup curve",
+    text: "How 'full' a stay week looks as its date approaches, from calendar unavailability. Owner-blocked nights are included, so read the slope (how fast it fills), not the level. Compare weeks at the same days-out.",
+  },
+  // --- Pricing behaviour (pricing_behavior / booking_stays) ---
+  discounting: {
+    title: "Discounting index",
+    text: "Of the dates still open two weeks before arrival, the share whose price was cut by at least 10% (or 20%), plus the typical depth of those cuts. High values mean hosts here blink first — useful for judging how firm asking rates really are.",
+  },
+  hold_vs_cut: {
+    title: "Cut vs hold conversion",
+    text: "Among dates still open two weeks out, how often cut dates ended up booked versus dates whose price was held. Only dates that were still open at T-14 are counted — it says cutting late converts better, not that cutting is always optimal.",
+  },
+  static_pricers: {
+    title: "Static pricers",
+    text: "The share of listings that never changed any price across our observation window. A rough measure of how unsophisticated the competition is — static pricers leave money on the table in peak weeks.",
+  },
+  early_bird: {
+    title: "Early-bird economics",
+    text: "The median nightly price guests actually locked in, grouped by how far ahead they booked. Prices are captured at booking time (from 26 Mar 2026 onward), so this reflects real transactions, not asking rates.",
+  },
+  tue_fri_sample: {
+    title: "How rates are sampled",
+    text: "Forward prices are currently sampled for Tuesday and Friday check-ins, 2–3 dates per week. Weekend-specific premiums aren't visible yet — day-of-week rotation is on the roadmap.",
+  },
+  // --- ROI / buy-side (sale_listings enrichment) ---
+  str_yield: {
+    title: "STR gross yield",
+    text: "Estimated annual short-term-rental revenue divided by the asking price, before costs. Revenue is modelled from comparable Airbnb listings nearby (similar size and location) — the comp count tells you how solid each estimate is.",
+  },
+  ltr_yield: {
+    title: "LTR gross yield",
+    text: "Estimated annual long-term rent divided by the asking price, before costs. Rent is estimated from comparable long-term listings in the area.",
+  },
+  str_revenue: {
+    title: "Est. STR revenue",
+    text: "Median comparable nightly rate × median comparable occupancy × 365. It's a modelled estimate from nearby short-term rentals, not reported income — treat it as a starting point, not a promise.",
+  },
+  cash_on_cash: {
+    title: "Cash-on-cash return",
+    text: "Your first-year pre-tax cash flow divided by the cash you actually put in. We assume 25% of revenue goes to operating costs before debt service — every input has a slider, so stress-test it.",
+  },
+  break_even: {
+    title: "Break-even occupancy",
+    text: "The occupancy at which STR revenue covers running costs, assuming €3,600/year fixed costs plus 25% of revenue as variable costs. Adjust the sliders to your numbers — the default is a deliberately simple model.",
+  },
+  parity_occ: {
+    title: "STR vs long-term parity",
+    text: "Above this occupancy, short-term letting out-earns renting the property long-term (gross). Below it, the long-term tenant wins with far less work. Compare it against the area's actual occupancy.",
+  },
+  dom: {
+    title: "Days on market",
+    text: "How long a listing has been advertised. We started tracking in mid-April 2026, so listings marked ≥ were already live before then and have been on the market at least that long.",
+  },
+  price_cuts: {
+    title: "Price cuts",
+    text: "Listings where we observed the asking price drop, with the total change since first seen. Sellers who have already cut once are statistically more open to offers.",
+  },
+  screener: {
+    title: "Deal screener",
+    text: "Active listings ranked by estimated STR gross yield, kept honest: only listings with at least 5 comparable rentals and plausible yields are shown. Always verify condition, title and licence status before acting on an estimate.",
+  },
+  // --- Area health / supply ---
+  composite_score: {
+    title: "Area score",
+    text: "A 0–100 blend of occupancy (40%), RevPAR (30%), booking growth (15%) and new-listing absorption (15%), scaled across districts. The weights are our v1 judgement call — the underlying columns are all shown so you can disagree.",
+  },
+  ramp_up: {
+    title: "New-listing ramp-up",
+    text: "Average occupancy of newly launched listings by weeks since they first appeared. Shows how long it typically takes a new property to find its footing in this market.",
+  },
+  absorption: {
+    title: "Absorption",
+    text: "Of listings that launched in the last 90 days, the share that has already taken at least one confident booking. High absorption means demand is soaking up new supply.",
+  },
+  churn: {
+    title: "Supply churn",
+    text: "Listings added versus delisted each month. Net growth with strong occupancy is a healthy market; net growth with falling occupancy means supply is outrunning demand.",
   },
 } as const satisfies Record<string, Explainer>;
 

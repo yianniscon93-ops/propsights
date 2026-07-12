@@ -2,13 +2,13 @@
 
 import { motion } from "framer-motion";
 import { Info } from "lucide-react";
-import type { MarketResponse, WeeklyRow } from "@/lib/dashboard/types";
+import type { AreaHealth, MarketResponse, WeeklyRow } from "@/lib/dashboard/types";
 import { fmtEuro, fmtInt, fmtPct, TYPE_GROUP_LABELS } from "@/lib/dashboard/format";
 import { AMENITIES } from "@/lib/dashboard/filters";
 import { currentWeekMonday } from "@/lib/dashboard/weeks";
 import type { ExplainerId } from "@/lib/dashboard/explain";
 import { UI } from "./tokens";
-import { TrendChart, BarsChart, GapBars, type TrendSeries } from "./charts";
+import { TrendChart, BarsChart, GapBars, LineAreaChart, type TrendSeries } from "./charts";
 import Explain, { StatLabel } from "./Explain";
 
 const fmtWeek = (iso: string) =>
@@ -72,7 +72,13 @@ function DeltaBadge({ delta, fmt, suffix }: { delta: number | null; fmt: (v: num
   );
 }
 
-export default function MarketTab({ market }: { market: MarketResponse | null }) {
+export default function MarketTab({
+  market,
+  health,
+}: {
+  market: MarketResponse | null;
+  health: AreaHealth | null;
+}) {
   const cur = currentWeekMonday();
   const weekly = market?.weekly ?? [];
   const realized = weekly.filter((w) => w.weekStart < cur);
@@ -532,6 +538,138 @@ export default function MarketTab({ market }: { market: MarketResponse | null })
             </div>
           </div>
         </div>
+      )}
+
+      {/* Area health — island-wide district league + supply dynamics */}
+      {health && health.districts.length > 0 && (
+        <>
+          <div className="glass-card rounded-2xl p-5 mt-2.5">
+            <div className="flex items-center justify-between mb-3">
+              <StatLabel id="composite_score" align="left">
+                District league — all of Cyprus
+              </StatLabel>
+              <span className="text-[11px]" style={{ color: UI.faint }}>
+                last 4 completed weeks · doesn&apos;t follow your selection
+              </span>
+            </div>
+            <div className="overflow-x-auto ps-scroll">
+              <table className="w-full text-left" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+                <thead>
+                  <tr>
+                    {["District", "Score", "Listings", "Occupancy", "RevPAR", "Bookings WoW×4", "New / gone · 90d", "Absorption"].map((h, i) => (
+                      <th
+                        key={h}
+                        className="text-[10px] uppercase tracking-wider font-semibold py-2 pr-4 whitespace-nowrap"
+                        style={{ color: UI.faint, borderBottom: `1px solid ${UI.border}` }}
+                      >
+                        {h}
+                        {i === 7 && (
+                          <span className="ml-1 normal-case">
+                            <Explain id="absorption" align="right" />
+                          </span>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {health.districts.map((d) => (
+                    <tr key={d.areaId}>
+                      <td className="py-2.5 pr-4 text-[13px] font-semibold whitespace-nowrap" style={{ color: UI.text, borderBottom: `1px solid ${UI.border}` }}>
+                        {d.district.replace(" District", "")}
+                      </td>
+                      <td className="py-2.5 pr-4" style={{ borderBottom: `1px solid ${UI.border}` }}>
+                        <span className="inline-flex items-center gap-2">
+                          <span className="font-display font-bold text-[15px]" style={{ color: UI.green }}>
+                            {d.score ?? "—"}
+                          </span>
+                          <span className="w-14 h-1.5 rounded-full overflow-hidden inline-block" style={{ background: "rgba(255,255,255,0.07)" }}>
+                            <span
+                              className="h-full block rounded-full"
+                              style={{ width: `${d.score ?? 0}%`, background: "linear-gradient(90deg,#4A5E3A,#8FCC80)" }}
+                            />
+                          </span>
+                        </span>
+                      </td>
+                      <td className="py-2.5 pr-4 text-[13px] whitespace-nowrap" style={{ color: UI.muted, borderBottom: `1px solid ${UI.border}` }}>
+                        {fmtInt(d.listings)}
+                      </td>
+                      <td className="py-2.5 pr-4 text-[13px] font-semibold whitespace-nowrap" style={{ color: UI.text, borderBottom: `1px solid ${UI.border}` }}>
+                        {fmtPct(d.effOcc)}
+                      </td>
+                      <td className="py-2.5 pr-4 text-[13px] whitespace-nowrap" style={{ color: UI.muted, borderBottom: `1px solid ${UI.border}` }}>
+                        {fmtEuro(d.revpar)}
+                      </td>
+                      <td className="py-2.5 pr-4 text-[13px] font-semibold whitespace-nowrap" style={{ color: (d.bookingsGrowth ?? 0) >= 0 ? UI.green : NEG, borderBottom: `1px solid ${UI.border}` }}>
+                        {d.bookingsGrowth != null ? `${d.bookingsGrowth >= 0 ? "+" : ""}${d.bookingsGrowth.toFixed(1)}%` : "—"}
+                      </td>
+                      <td className="py-2.5 pr-4 text-[13px] whitespace-nowrap" style={{ color: UI.muted, borderBottom: `1px solid ${UI.border}` }}>
+                        {d.newListings90d != null ? `+${fmtInt(d.newListings90d)}` : "—"}
+                        {" / "}
+                        {d.delisted90d != null ? `−${fmtInt(d.delisted90d)}` : "—"}
+                      </td>
+                      <td className="py-2.5 pr-4 text-[13px] whitespace-nowrap" style={{ color: UI.text, borderBottom: `1px solid ${UI.border}` }}>
+                        {fmtPct(d.absorption90d)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] mt-3" style={{ color: UI.faint }}>
+              Score blends occupancy (40%), RevPAR (30%), booking growth (15%) and new-listing
+              absorption (15%) — the inputs are all in the table, so form your own view.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 mt-2.5">
+            <div className="glass-card rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <StatLabel id="ramp_up" align="left">
+                  New-listing ramp-up
+                </StatLabel>
+                <span className="text-[11px]" style={{ color: UI.faint }}>
+                  occupancy by weeks since launch · listings started in the last 6 months
+                </span>
+              </div>
+              <LineAreaChart
+                data={health.rampUp.map((r) => ({ x: `wk ${r.week}`, y: r.effOcc }))}
+                yFmt={(v) => `${v.toFixed(0)}%`}
+                height={110}
+                emptyLabel="Not enough newly launched listings yet"
+              />
+            </div>
+            <div className="glass-card rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <StatLabel id="churn" align="left">
+                  Supply churn — net new listings
+                </StatLabel>
+                <span className="text-[11px]" style={{ color: UI.faint }}>
+                  per month · above zero = supply growing
+                </span>
+              </div>
+              <GapBars
+                data={health.churn.map((c) => ({
+                  label: new Date(`${c.month}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "short" }),
+                  value: c.added - c.removed,
+                }))}
+                yFmt={(v) => `${fmtInt(v)} net`}
+                labelEvery={1}
+                emptyLabel="Not enough tracking history yet"
+              />
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5">
+                {health.churn.map((c) => (
+                  <span key={c.month} className="text-[11px]" style={{ color: UI.faint }}>
+                    {new Date(`${c.month}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "short" })}
+                    {": "}
+                    <b style={{ color: UI.green }}>+{fmtInt(c.added)}</b> /{" "}
+                    <b style={{ color: NEG }}>−{fmtInt(c.removed)}</b>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

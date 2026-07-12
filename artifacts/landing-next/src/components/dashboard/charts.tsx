@@ -341,6 +341,80 @@ export function GapBars({
   );
 }
 
+export interface StackSegment {
+  key: string;
+  label: string;
+  color: string;
+}
+
+/** 100%-stacked columns — e.g. stay-length mix per month. */
+export function StackedBars({
+  data,
+  segments,
+  height = 110,
+  emptyLabel = "Not enough data yet",
+}: {
+  /** values are shares that already sum to ~100 per row. */
+  data: Array<{ label: string; values: Record<string, number> }>;
+  segments: StackSegment[];
+  height?: number;
+  emptyLabel?: string;
+}) {
+  if (!data.length) {
+    return (
+      <div
+        className="h-24 flex items-center justify-center rounded-xl text-sm"
+        style={{ background: "rgba(255,255,255,0.04)", color: UI.faint }}
+      >
+        {emptyLabel}
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-end gap-[5px]" style={{ height }}>
+        {data.map((d) => {
+          const total = segments.reduce((s, seg) => s + (d.values[seg.key] ?? 0), 0) || 1;
+          return (
+            <div
+              key={d.label}
+              className="flex-1 h-full flex flex-col-reverse rounded-[3px] overflow-hidden"
+              title={segments
+                .map((seg) => `${seg.label}: ${(d.values[seg.key] ?? 0).toFixed(0)}%`)
+                .join(" · ")}
+            >
+              {segments.map((seg) => (
+                <div
+                  key={seg.key}
+                  style={{
+                    height: `${(100 * (d.values[seg.key] ?? 0)) / total}%`,
+                    background: seg.color,
+                  }}
+                />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-[5px] mt-1.5">
+        {data.map((d) => (
+          <span key={d.label} className="flex-1 text-center text-[10px] truncate" style={{ color: UI.faint }}>
+            {d.label}
+          </span>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+        {segments.map((seg) => (
+          <span key={seg.key} className="flex items-center gap-1.5 text-[11px]" style={{ color: UI.muted }}>
+            <span className="w-2.5 h-2.5 rounded-[3px] inline-block" style={{ background: seg.color }} />
+            {seg.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function BarsChart({
   data,
   yFmt = (v) => String(v),

@@ -51,6 +51,12 @@ export default function PricingTab({
     (p) => p.withCount >= MIN_SPLIT && p.withoutCount >= MIN_SPLIT
   );
 
+  // District-grain discounting behaviour; lead with the current stay month.
+  const behavior = pricing?.behavior ?? null;
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const latestBehavior =
+    behavior?.months.find((m) => m.month === thisMonth) ?? behavior?.months.at(-1) ?? null;
+
   const cards = [
     {
       id: "median_adr" as const,
@@ -110,8 +116,9 @@ export default function PricingTab({
             <StatLabel id="forward_rates" align="left">
               Forward rates · next 6 months
             </StatLabel>
-            <p className="text-[11px]" style={{ color: UI.faint }}>
-              asking rates for available nights
+            <p className="text-[11px] flex items-center gap-1.5" style={{ color: UI.faint }}>
+              Tue/Fri check-in samples
+              <Explain id="tue_fri_sample" align="right" />
             </p>
           </div>
           <TrendChart
@@ -318,9 +325,142 @@ export default function PricingTab({
           </p>
         )}
         <p className="text-[11px] mt-3.5" style={{ color: UI.faint }}>
-          Coming soon: weekend & holiday premiums and price-vs-lead-time dynamics.
+          Coming soon: weekend &amp; holiday premiums (needs day-of-week price rotation).
         </p>
       </div>
+
+      {/* Pricing behaviour — discounting, cut-vs-hold, static pricers */}
+      {behavior && latestBehavior && (
+        <div className="glass-card rounded-2xl p-5 mt-2.5">
+          <div className="flex items-center justify-between mb-4">
+            <StatLabel id="discounting" align="left">
+              How hosts here manage prices
+            </StatLabel>
+            <span className="text-[11px]" style={{ color: UI.faint }}>
+              {behavior.scope} · dates still open 2 weeks before arrival
+            </span>
+          </div>
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-2.5">
+            <div className="rounded-xl p-4" style={{ border: `1px solid ${UI.border}` }}>
+              <p className="font-display font-bold text-2xl leading-none" style={{ color: UI.green }}>
+                {fmtShare(latestBehavior.pctCut10)}
+              </p>
+              <p className="text-[11px] mt-2 uppercase tracking-wider font-medium" style={{ color: UI.muted }}>
+                open dates cut ≥10% · {fmtMonthLong(latestBehavior.month)}
+              </p>
+              <p className="text-[11px] mt-1" style={{ color: UI.faint }}>
+                {fmtShare(latestBehavior.pctCut20)} cut ≥20%
+              </p>
+            </div>
+            <div className="rounded-xl p-4" style={{ border: `1px solid ${UI.border}` }}>
+              <p className="font-display font-bold text-2xl leading-none" style={{ color: UI.text }}>
+                {latestBehavior.medCutDepth != null ? `${latestBehavior.medCutDepth.toFixed(1)}%` : "—"}
+              </p>
+              <p className="text-[11px] mt-2 uppercase tracking-wider font-medium" style={{ color: UI.muted }}>
+                median cut depth
+              </p>
+            </div>
+            <div className="rounded-xl p-4" style={{ border: `1px solid ${UI.border}` }}>
+              <div className="flex items-baseline gap-2">
+                <p className="font-display font-bold text-2xl leading-none" style={{ color: UI.green }}>
+                  {fmtShare(latestBehavior.convCut)}
+                </p>
+                <span className="text-[12px]" style={{ color: UI.faint }}>
+                  vs {fmtShare(latestBehavior.convHold)}
+                </span>
+              </div>
+              <p className="text-[11px] mt-2 uppercase tracking-wider font-medium flex items-center gap-1.5" style={{ color: UI.muted }}>
+                cutters vs holders who got booked
+                <Explain id="hold_vs_cut" align="left" />
+              </p>
+            </div>
+            <div className="rounded-xl p-4" style={{ border: `1px solid ${UI.border}` }}>
+              <p className="font-display font-bold text-2xl leading-none" style={{ color: UI.text }}>
+                {fmtShare(latestBehavior.staticShare)}
+              </p>
+              <p className="text-[11px] mt-2 uppercase tracking-wider font-medium flex items-center gap-1.5" style={{ color: UI.muted }}>
+                never touch their prices
+                <Explain id="static_pricers" align="left" />
+              </p>
+            </div>
+          </div>
+
+          {behavior.months.length >= 2 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: UI.muted }}>
+                  Share of open dates cut ≥10%, by stay month
+                </p>
+                <BarsChart
+                  data={behavior.months.map((m) => ({
+                    label: fmtMonthLong(m.month),
+                    value: m.pctCut10,
+                  }))}
+                  yFmt={(v) => `${v.toFixed(1)}% of open dates`}
+                  height={90}
+                  highlightMax
+                />
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: UI.muted }}>
+                  Conversion after a cut vs after holding
+                </p>
+                <div className="flex flex-col gap-2.5 pt-1">
+                  {behavior.months.map((m) => (
+                    <div key={m.month}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-medium" style={{ color: UI.text }}>
+                          {fmtMonthLong(m.month)}
+                        </span>
+                        <span className="text-[11px]" style={{ color: UI.muted }}>
+                          cut {fmtShare(m.convCut)} · held {fmtShare(m.convHold)}
+                        </span>
+                      </div>
+                      <div className="flex gap-1">
+                        <div className="h-1.5 rounded-full" style={{ width: `${m.convCut ?? 0}%`, background: UI.green }} />
+                        <div className="h-1.5 rounded-full" style={{ width: `${m.convHold ?? 0}%`, background: "rgba(255,255,255,0.18)" }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          <p className="text-[11px] mt-4" style={{ color: UI.faint }}>
+            Only dates still open two weeks before arrival are counted — it says late cutting
+            converts better, not that cutting is always the right move.
+          </p>
+        </div>
+      )}
+
+      {/* Early-bird economics */}
+      {(pricing?.earlyBird?.length ?? 0) > 0 && (
+        <div className="glass-card rounded-2xl p-5 mt-2.5">
+          <div className="flex items-center justify-between mb-3">
+            <StatLabel id="early_bird" align="left">
+              What booking early actually costs
+            </StatLabel>
+            <span className="text-[11px]" style={{ color: UI.faint }}>
+              median nightly price locked in, by how far ahead guests booked
+            </span>
+          </div>
+          <BarsChart
+            data={(pricing?.earlyBird ?? []).map((b) => ({ label: b.bucket, value: b.medPrice }))}
+            yFmt={(v) => fmtEuro(v)}
+            height={110}
+            highlightMax
+            emptyLabel="Not enough priced bookings yet"
+          />
+          <p className="text-[11px] mt-3" style={{ color: UI.faint }}>
+            Real transaction prices captured at booking time (tracked since 26 Mar 2026), not
+            asking rates.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
+
+const fmtShare = (v: number | null) => (v != null ? `${v.toFixed(1)}%` : "—");
+const fmtMonthLong = (ym: string) =>
+  new Date(`${ym}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long" });

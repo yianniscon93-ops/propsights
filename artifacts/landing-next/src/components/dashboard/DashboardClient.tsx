@@ -17,12 +17,14 @@ import {
 } from "lucide-react";
 import { BRAND } from "@/lib/brand";
 import type {
+  AreaHealth,
   AreaInfo,
   DashboardSummary,
   InvestStats,
   ListingDetail,
   MarketResponse,
   OccWindow,
+  PaceData,
   PointRow,
   PolygonCoords,
   PricingData,
@@ -120,6 +122,8 @@ export default function DashboardClient() {
   const [pricing, setPricing] = useState<PricingData | null>(null);
   const [invest, setInvest] = useState<InvestStats | null>(null);
   const [rentals, setRentals] = useState<RentalStats | null>(null);
+  const [pace, setPace] = useState<PaceData | null>(null);
+  const [health, setHealth] = useState<AreaHealth | null>(null);
 
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
@@ -167,6 +171,11 @@ export default function DashboardClient() {
     fetch("/api/dashboard/areas")
       .then((r) => r.json())
       .then(setAreas)
+      .catch(console.error);
+    // Area health is island-wide and selection-independent — one fetch.
+    fetch("/api/dashboard/health")
+      .then((r) => r.json())
+      .then(setHealth)
       .catch(console.error);
   }, []);
 
@@ -230,10 +239,32 @@ export default function DashboardClient() {
   // Invest / rentals: polygon-only scope, fetched once their tab opens.
   const [investWanted, setInvestWanted] = useState(false);
   const [rentalsWanted, setRentalsWanted] = useState(false);
+  const [paceWanted, setPaceWanted] = useState(false);
   useEffect(() => {
     if (tab === "invest") setInvestWanted(true);
     if (tab === "rentals") setRentalsWanted(true);
+    if (tab === "pace") setPaceWanted(true);
   }, [tab]);
+
+  // Booking pace: district grain — follows the selection, not the filters.
+  useEffect(() => {
+    if (!paceWanted) return;
+    const ctrl = new AbortController();
+    setPace(null);
+    fetch("/api/dashboard/pace", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        polygon,
+        areaId: selection.kind === "area" ? selection.area.areaId : null,
+      }),
+      signal: ctrl.signal,
+    })
+      .then((r) => r.json())
+      .then(setPace)
+      .catch((e: Error) => e.name !== "AbortError" && console.error(e));
+    return () => ctrl.abort();
+  }, [polygon, paceWanted, selection]);
   useEffect(() => {
     if (!investWanted) return;
     const ctrl = new AbortController();
@@ -363,7 +394,8 @@ export default function DashboardClient() {
         <div className="flex items-center gap-3">
           {summary && (
             <span className="text-xs hidden md:flex items-center gap-1.5" style={{ color: UI.muted }}>
-              Updated daily · data through {fmtDate(summary.todateEnd)}
+              Calendars through {fmtDate(summary.todateEnd)}
+              {summary.bookingsThrough && <> · bookings to {fmtDate(summary.bookingsThrough)}</>}
               <Explain id="freshness" align="right" />
             </span>
           )}
@@ -565,14 +597,6 @@ export default function DashboardClient() {
               >
                 <span style={{ color: active ? UI.green : UI.faint }}>{t.icon}</span>
                 {t.label}
-                {t.id === "pace" && (
-                  <span
-                    className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full"
-                    style={{ background: "rgba(143,204,128,0.1)", color: UI.green }}
-                  >
-                    soon
-                  </span>
-                )}
               </button>
             );
           })}
@@ -581,10 +605,10 @@ export default function DashboardClient() {
 
       {/* Tab content */}
       <div className="px-3 md:px-4 py-4 pb-12">
-        {tab === "market" && <MarketTab market={market} />}
+        {tab === "market" && <MarketTab market={market} health={health} />}
         {tab === "pricing" && <PricingTab pricing={pricing} market={market} />}
-        {tab === "pace" && <PaceTab />}
-        {tab === "invest" && <InvestTab invest={invest} selection={selection} />}
+        {tab === "pace" && <PaceTab pace={pace} />}
+        {tab === "invest" && <InvestTab invest={invest} selection={selection} market={market} />}
         {tab === "rentals" && <RentalsTab rentals={rentals} selection={selection} />}
       </div>
     </div>

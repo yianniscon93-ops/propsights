@@ -205,6 +205,7 @@ function build(): DemoStore {
     todateEnd: isoDate(yesterday),
     fwdEnd: isoDate(fwdEnd),
     lastRunAt: now.toISOString(),
+    bookingsThrough: now.toISOString(),
   };
 
   return { listings, byId: new Map(listings.map((l) => [l.id, l])), weekly, summary };
