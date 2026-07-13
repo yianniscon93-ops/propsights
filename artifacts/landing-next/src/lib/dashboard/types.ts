@@ -296,8 +296,10 @@ export interface InvestStats {
 
 export interface PaceData {
   source: "live" | "demo";
-  /** District the stats are scoped to ("Cyprus" when island-wide). */
+  /** Human label for what the booking stats cover (area/polygon + filters). */
   scope: string;
+  /** area_pace is district-pre-aggregated — the pickup chart's true grain. */
+  pickupScope: string;
   bookingsThrough: string | null;
   /** Night-weighted median lead time per stay month. */
   leadTimeByMonth: Array<{ month: string; medianLead: number | null; nights: number }>;

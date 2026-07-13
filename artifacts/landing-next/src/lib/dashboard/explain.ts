@@ -156,30 +156,26 @@ export const EXPLAINERS = {
     title: "How rates are sampled",
     text: "Forward prices are currently sampled for Tuesday and Friday check-ins, 2–3 dates per week. Weekend-specific premiums aren't visible yet — day-of-week rotation is on the roadmap.",
   },
-  // --- ROI / buy-side (sale_listings enrichment) ---
-  str_yield: {
-    title: "STR gross yield",
-    text: "Estimated annual short-term-rental revenue divided by the asking price, before costs. Revenue is modelled from comparable Airbnb listings nearby (similar size and location) — the comp count tells you how solid each estimate is.",
-  },
-  ltr_yield: {
-    title: "LTR gross yield",
-    text: "Estimated annual long-term rent divided by the asking price, before costs. Rent is estimated from comparable long-term listings in the area.",
-  },
+  // --- Buy & Rent (sale_listings + ltr_listings enrichment) ---
   str_revenue: {
-    title: "Est. STR revenue",
-    text: "Median comparable nightly rate × median comparable occupancy × 365. It's a modelled estimate from nearby short-term rentals, not reported income — treat it as a starting point, not a promise.",
+    title: "Est. Airbnb earnings",
+    text: "What a typical property here could gross per year on Airbnb: comparable listings' nightly rate × how often they're actually booked × 365. A modelled estimate from real neighbours, not reported income — treat it as a starting point.",
   },
-  cash_on_cash: {
-    title: "Cash-on-cash return",
-    text: "Your first-year pre-tax cash flow divided by the cash you actually put in. We assume 25% of revenue goes to operating costs before debt service — every input has a slider, so stress-test it.",
+  payback_years: {
+    title: "Pays for itself in…",
+    text: "The asking price divided by estimated yearly earnings, before costs — how many years of gross income it takes to earn the purchase price back. Shorter is better. It's the same maths as 'gross yield', just in human terms.",
   },
-  break_even: {
-    title: "Break-even occupancy",
-    text: "The occupancy at which STR revenue covers running costs, assuming €3,600/year fixed costs plus 25% of revenue as variable costs. Adjust the sliders to your numbers — the default is a deliberately simple model.",
+  verdict: {
+    title: "Airbnb it or rent it out?",
+    text: "We compare what the typical property here grosses per year on Airbnb versus with a long-term tenant. Airbnb usually earns more but takes work and depends on staying booked; the tenant is hands-off. The tipping point tells you how booked you'd need to stay for Airbnb to win.",
   },
-  parity_occ: {
-    title: "STR vs long-term parity",
-    text: "Above this occupancy, short-term letting out-earns renting the property long-term (gross). Below it, the long-term tenant wins with far less work. Compare it against the area's actual occupancy.",
+  rent_supply: {
+    title: "Long-term rentals",
+    text: "Properties currently advertised for long-term rent in your selection, and the median advertised monthly rent. Bedrooms and property-type filters apply here too.",
+  },
+  sale_scope: {
+    title: "How area matching works",
+    text: "For-sale and rental listings aren't tagged to named areas yet, so a searched area is matched by distance from its centre (its search radius). Drawn areas are matched exactly. Bedrooms and property-type filters apply; Airbnb-only filters (amenities, superhost…) don't exist for these listings.",
   },
   dom: {
     title: "Days on market",
@@ -191,7 +187,24 @@ export const EXPLAINERS = {
   },
   screener: {
     title: "Deal screener",
-    text: "Active listings ranked by estimated STR gross yield, kept honest: only listings with at least 5 comparable rentals and plausible yields are shown. Always verify condition, title and licence status before acting on an estimate.",
+    text: "Active listings ranked by how fast their estimated Airbnb earnings pay back the asking price, kept honest: only listings with at least 5 comparable rentals and plausible numbers are shown. Always verify condition, title and licence status before acting on an estimate.",
+  },
+  // --- Revenue calculator ---
+  rev_calc: {
+    title: "Revenue calculator",
+    text: "Everything is a slider: nightly rate, occupancy and costs start at your selected area's real numbers — drag to test your own scenario. Results are pre-tax, first-year estimates.",
+  },
+  occ_needed: {
+    title: "Nights needed to break even",
+    text: "The share of nights that must be booked before revenue covers your running costs (and mortgage, if enabled). If this is well below the area's actual occupancy, the numbers have room to breathe.",
+  },
+  buy_costs: {
+    title: "What it costs to buy here",
+    text: "Median asking price by bedroom count inside your searched or drawn area. Tap one to load it into the calculator. Breakdown by year of construction is coming soon — that attribute isn't in our synced data yet.",
+  },
+  mortgage: {
+    title: "Mortgage",
+    text: "Optional financing: down payment, interest rate and term produce a yearly loan payment that's subtracted from profit. Cash-in includes the down payment plus ~5% purchase costs.",
   },
   // --- Area health / supply ---
   composite_score: {

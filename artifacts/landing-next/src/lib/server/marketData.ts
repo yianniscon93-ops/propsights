@@ -863,15 +863,81 @@ const SCREENER_MIN_PRICE = 50000;
 const SCREENER_MAX_YIELD = 25;
 const SCREENER_MIN_COMPS = 5;
 
+/** sale/ltr property_type vocabulary (Bazaraki) differs from Airbnb's. */
+const SALE_TYPE_WORDS: Record<"apartment" | "house", string[]> = {
+  apartment: ["apartment", "penthouse", "studio", "flat"],
+  house: ["villa", "detached", "house", "maisonette", "bungalow", "townhouse"],
+};
+
+function saleTypeCond(sql: Sql, group: TypeGroup): Frag {
+  const words = (g: "apartment" | "house") =>
+    SALE_TYPE_WORDS[g].map((w) => sql`property_type ILIKE ${"%" + w + "%"}`);
+  if (group === "apartment" || group === "house") return sql`(${orJoin(sql, words(group))})`;
+  if (group === "other")
+    return sql`NOT (${orJoin(sql, [...words("apartment"), ...words("house")])})`;
+  return sql`FALSE`; // hotels aren't sold/rented on the property portals
+}
+
+/** The subset of the dashboard filters that translates to sale/ltr rows
+ * (bedrooms + property type — the rest are Airbnb-only attributes). */
+function saleFilterCond(sql: Sql, f: Filters): Frag {
+  const conds: Frag[] = [sql`TRUE`];
+  if (f.minBeds > 0) conds.push(sql`bedrooms >= ${f.minBeds}`);
+  if (f.types.length) conds.push(sql`(${orJoin(sql, f.types.map((g) => saleTypeCond(sql, g)))})`);
+  return conds.reduce((a, c) => sql`${a} AND ${c}`);
+}
+
+/** Named-area circle for sale/ltr tables (they carry no area assignment
+ * yet): dim_areas centre + search radius. NOTE: must return plain data, not
+ * a fragment — postgres fragments are thenables, so returning one from an
+ * async fn would execute it as a standalone query on await. */
+async function saleAreaCircle(
+  sql: Sql,
+  areaId: string
+): Promise<{ lat: number; lng: number; meters: number } | null> {
+  const rows = await sql`
+    SELECT area_type, latitude, longitude, search_radius_km::float AS r
+    FROM dim_areas WHERE area_id = ${areaId} LIMIT 1
+  `;
+  const a = rows[0];
+  if (a && a.area_type !== "country" && a.latitude != null && a.longitude != null && a.r != null) {
+    return { lat: a.latitude, lng: a.longitude, meters: a.r * 1000 };
+  }
+  return null;
+}
+
+/** Geo + attribute scope for sale/ltr tables: exact polygon, or a named
+ * area approximated by its centre + search radius, plus the translatable
+ * filter subset. Wrapped in an object — awaiting a bare fragment would
+ * execute it (fragments are thenables). */
+async function saleScope(
+  sql: Sql,
+  polygon: PolygonCoords | null,
+  areaId: string | null | undefined,
+  f: Filters
+): Promise<{ where: Frag }> {
+  const circle = !polygon && areaId ? await saleAreaCircle(sql, areaId) : null;
+  const geo = polygon
+    ? sql`ST_Covers(ST_GeogFromText(${polygonWkt(polygon)}), geog)`
+    : circle
+      ? sql`ST_DWithin(geog,
+          ST_SetSRID(ST_MakePoint(${circle.lng}, ${circle.lat}), 4326)::geography,
+          ${circle.meters})`
+      : sql`TRUE`;
+  return { where: sql`(${geo}) AND (${saleFilterCond(sql, f)})` };
+}
+
 /** Buy-side snapshot + ROI enrichment (backfilled 12 Jul 2026).
- * Named-area filtering is unavailable (sale_listings.area is NULL until the
- * Bazaraki assigner runs) — polygon or island only. */
-export function getInvest(polygon: PolygonCoords | null): Promise<InvestStats> {
+ * Scope: exact polygon, or named area via centre+radius; bedrooms and
+ * property-type filters apply (the rest are Airbnb-only). */
+export function getInvest(
+  polygon: PolygonCoords | null,
+  areaId?: string | null,
+  f: Filters = DEFAULT_FILTERS
+): Promise<InvestStats> {
   return tryLive<InvestStats>(
     async (sql) => {
-      const geo = polygon
-        ? sql`ST_Covers(ST_GeogFromText(${polygonWkt(polygon)}), geog)`
-        : sql`TRUE`;
+      const { where: geo } = await saleScope(sql, polygon, areaId, f);
       const [agg] = await sql`
         SELECT COUNT(*)::int AS n,
           percentile_cont(ARRAY[0.25, 0.5, 0.75])
@@ -956,12 +1022,48 @@ const WINDOW_DAYS_OUT = [0, 3, 7, 14, 21, 30, 45, 60, 90, 120, 150, 180];
 /** Pickup chart stay-weeks: Mondays this many weeks after the current week. */
 const PICKUP_WEEKS_AHEAD = [2, 5, 9];
 
-export function getPace(polygon: PolygonCoords | null, areaId?: string | null): Promise<PaceData> {
+export function getPace(
+  polygon: PolygonCoords | null,
+  areaId?: string | null,
+  f: Filters = DEFAULT_FILTERS
+): Promise<PaceData> {
   return tryLive<PaceData>(
     async (sql) => {
       const district = await resolveDistrict(sql, polygon, areaId);
-      const distCond = district ? sql`district = ${district}` : sql`TRUE`;
-      const base = sql`${STAYS_BASE(sql)} AND ${distCond}`;
+      const hasFilters = countActive({ ...f, areas: [] }) > 0;
+
+      // Named-area lookup for a precise listing-column condition + label.
+      let area: AreaInfo | null = null;
+      if (!polygon && areaId) {
+        const rows = await sql`
+          SELECT area_id, name_en, name_el, area_type, district, parent_id,
+                 latitude, longitude, search_radius_km::float AS search_radius_km, listing_count
+          FROM dim_areas WHERE area_id = ${areaId} LIMIT 1
+        `;
+        if (rows.length) area = rowToArea(rows[0]);
+      }
+      const cond = area && area.areaType !== "country" ? areaCond(sql, area) : null;
+
+      // Stays scope: a listing set whenever the selection/filters resolve to
+      // str_listings (polygon, filters, or a named area with a listings
+      // column); district fallback for quarter/parish; island otherwise.
+      let listingWhere: Frag | null = null;
+      if (polygon || hasFilters) {
+        listingWhere = buildWhere(sql, { ...f, areas: [] }, polygon);
+        if (cond) listingWhere = sql`${listingWhere} AND ${cond}`;
+      } else if (cond) {
+        listingWhere = sql`is_active IS TRUE AND ${cond}`;
+      }
+      const scopeCond = listingWhere
+        ? sql`listing_id IN (SELECT listing_id FROM str_listings WHERE ${listingWhere})`
+        : district
+          ? sql`district = ${district}`
+          : sql`TRUE`;
+      const base = sql`${STAYS_BASE(sql)} AND ${scopeCond}`;
+
+      const scopeLabel =
+        (polygon ? "Drawn area" : (area?.nameEn ?? "Cyprus")) +
+        (hasFilters ? " · filters applied" : "");
 
       // Night-weighted median lead time per stay month (windowed medians
       // aren't native, so walk the cumulative night count per partition).
@@ -1064,7 +1166,8 @@ export function getPace(polygon: PolygonCoords | null, areaId?: string | null): 
 
       return {
         source: "live",
-        scope: district ?? "Cyprus",
+        scope: scopeLabel,
+        pickupScope: district ?? "Cyprus",
         bookingsThrough: fresh?.t ? new Date(fresh.t).toISOString() : null,
         leadTimeByMonth: byMonth
           .filter((r) => r.nights >= 100)
@@ -1256,13 +1359,15 @@ export function getAreaHealth(): Promise<AreaHealth> {
   );
 }
 
-/** Rent-side snapshot (ltr_listings) — polygon or island only, like sales. */
-export function getRentals(polygon: PolygonCoords | null): Promise<RentalStats> {
+/** Rent-side snapshot (ltr_listings) — same scoping rules as sales. */
+export function getRentals(
+  polygon: PolygonCoords | null,
+  areaId?: string | null,
+  f: Filters = DEFAULT_FILTERS
+): Promise<RentalStats> {
   return tryLive<RentalStats>(
     async (sql) => {
-      const geo = polygon
-        ? sql`ST_Covers(ST_GeogFromText(${polygonWkt(polygon)}), geog)`
-        : sql`TRUE`;
+      const { where: geo } = await saleScope(sql, polygon, areaId, f);
       const [agg] = await sql`
         SELECT COUNT(*)::int AS n,
           percentile_cont(ARRAY[0.25, 0.5, 0.75])
@@ -1512,6 +1617,7 @@ function demoPace(): PaceData {
   return {
     source: "demo",
     scope: "Cyprus",
+    pickupScope: "Cyprus",
     bookingsThrough: now.toISOString(),
     leadTimeByMonth: [
       { month: ym(-2), medianLead: 6, nights: 182000 },

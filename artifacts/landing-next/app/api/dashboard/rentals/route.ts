@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRentals } from "@/lib/server/marketData";
+import { parseFilters } from "@/lib/dashboard/filters";
 import type { PolygonCoords } from "@/lib/dashboard/types";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ function parsePolygon(input: unknown): PolygonCoords | null {
 }
 
 export async function POST(req: Request) {
-  let body: { polygon?: unknown };
+  let body: { polygon?: unknown; areaId?: unknown; filters?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -31,5 +32,11 @@ export async function POST(req: Request) {
   if (body.polygon != null && !polygon) {
     return NextResponse.json({ error: "invalid polygon" }, { status: 400 });
   }
-  return NextResponse.json(await getRentals(polygon));
+  const areaId = typeof body.areaId === "string" && body.areaId.length <= 32 ? body.areaId : null;
+  const filters = parseFilters(
+    body.filters && typeof body.filters === "object"
+      ? (body.filters as Record<string, unknown>)
+      : {}
+  );
+  return NextResponse.json(await getRentals(polygon, areaId, filters));
 }

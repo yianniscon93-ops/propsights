@@ -81,9 +81,9 @@ export default function PaceTab({ pace }: { pace: PaceData | null }) {
         >
           <Info size={15} style={{ color: UI.green }} className="shrink-0" />
           <span>
-            Booking-pace data is district-level — showing{" "}
-            <b style={{ color: UI.green }}>{pace.scope}</b>. Lead times are lower bounds: we detect
-            bookings within ~2 days of them happening.
+            Booking stats for <b style={{ color: UI.green }}>{pace.scope}</b> — they follow your
+            search, drawn area and filters. Lead times are lower bounds: we detect bookings within
+            ~2 days of them happening.
           </span>
         </div>
       )}
@@ -231,7 +231,8 @@ export default function PaceTab({ pace }: { pace: PaceData | null }) {
             Pickup — how upcoming weeks are filling
           </StatLabel>
           <span className="text-[11px]" style={{ color: UI.faint }}>
-            calendar unavailability incl. owner blocks · read the slope
+            {pace ? `${pace.pickupScope} · ` : ""}district-level snapshots incl. owner blocks ·
+            read the slope
           </span>
         </div>
         {pickupSeries.length ? (

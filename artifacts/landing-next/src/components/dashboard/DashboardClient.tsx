@@ -7,8 +7,8 @@ import { AnimatePresence } from "framer-motion";
 import {
   BarChart3,
   Building2,
+  Calculator,
   Hexagon,
-  KeyRound,
   LineChart,
   PenLine,
   SlidersHorizontal,
@@ -40,8 +40,8 @@ import SearchBar from "./SearchBar";
 import MarketTab from "./MarketTab";
 import PricingTab from "./PricingTab";
 import PaceTab from "./PaceTab";
-import InvestTab from "./InvestTab";
-import RentalsTab from "./RentalsTab";
+import BuyRentTab from "./BuyRentTab";
+import CalculatorTab from "./CalculatorTab";
 import HoverCard from "./HoverCard";
 import DateRangeCalendar from "./DateRangeCalendar";
 import Explain from "./Explain";
@@ -58,7 +58,7 @@ const MarketMap = dynamic(() => import("./MarketMap"), {
   ),
 });
 
-type TabId = "market" | "pricing" | "pace" | "invest" | "rentals";
+type TabId = "market" | "pricing" | "pace" | "buyrent" | "calc";
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -236,17 +236,27 @@ export default function DashboardClient() {
     return () => ctrl.abort();
   }, [debouncedFilters, polygon, pricingWanted, selection]);
 
-  // Invest / rentals: polygon-only scope, fetched once their tab opens.
+  // Buy & Rent / calculator / pace: all follow the selection AND the
+  // attribute filters, fetched once their tab first opens.
   const [investWanted, setInvestWanted] = useState(false);
   const [rentalsWanted, setRentalsWanted] = useState(false);
   const [paceWanted, setPaceWanted] = useState(false);
   useEffect(() => {
-    if (tab === "invest") setInvestWanted(true);
-    if (tab === "rentals") setRentalsWanted(true);
+    if (tab === "buyrent" || tab === "calc") setInvestWanted(true);
+    if (tab === "buyrent") setRentalsWanted(true);
     if (tab === "pace") setPaceWanted(true);
   }, [tab]);
 
-  // Booking pace: district grain — follows the selection, not the filters.
+  // Shared body: selection (polygon or named area) + attribute filters.
+  const scopeBody = useMemo(() => {
+    const params = Object.fromEntries(new URLSearchParams(debouncedFilters));
+    return JSON.stringify({
+      polygon,
+      areaId: selection.kind === "area" ? selection.area.areaId : null,
+      filters: params,
+    });
+  }, [polygon, selection, debouncedFilters]);
+
   useEffect(() => {
     if (!paceWanted) return;
     const ctrl = new AbortController();
@@ -254,17 +264,14 @@ export default function DashboardClient() {
     fetch("/api/dashboard/pace", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        polygon,
-        areaId: selection.kind === "area" ? selection.area.areaId : null,
-      }),
+      body: scopeBody,
       signal: ctrl.signal,
     })
       .then((r) => r.json())
       .then(setPace)
       .catch((e: Error) => e.name !== "AbortError" && console.error(e));
     return () => ctrl.abort();
-  }, [polygon, paceWanted, selection]);
+  }, [scopeBody, paceWanted]);
   useEffect(() => {
     if (!investWanted) return;
     const ctrl = new AbortController();
@@ -272,14 +279,14 @@ export default function DashboardClient() {
     fetch("/api/dashboard/invest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ polygon }),
+      body: scopeBody,
       signal: ctrl.signal,
     })
       .then((r) => r.json())
       .then(setInvest)
       .catch((e: Error) => e.name !== "AbortError" && console.error(e));
     return () => ctrl.abort();
-  }, [polygon, investWanted]);
+  }, [scopeBody, investWanted]);
   useEffect(() => {
     if (!rentalsWanted) return;
     const ctrl = new AbortController();
@@ -287,14 +294,14 @@ export default function DashboardClient() {
     fetch("/api/dashboard/rentals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ polygon }),
+      body: scopeBody,
       signal: ctrl.signal,
     })
       .then((r) => r.json())
       .then(setRentals)
       .catch((e: Error) => e.name !== "AbortError" && console.error(e));
     return () => ctrl.abort();
-  }, [polygon, rentalsWanted]);
+  }, [scopeBody, rentalsWanted]);
 
   // Hovered/pinned listing detail (with a small cache).
   const activeId = pinnedId ?? hoverId;
@@ -361,8 +368,8 @@ export default function DashboardClient() {
     { id: "market", label: "Market overview", icon: <BarChart3 size={14} /> },
     { id: "pricing", label: "Pricing", icon: <LineChart size={14} /> },
     { id: "pace", label: "Booking pace", icon: <Timer size={14} /> },
-    { id: "invest", label: "For sale", icon: <Building2 size={14} /> },
-    { id: "rentals", label: "Long-term rentals", icon: <KeyRound size={14} /> },
+    { id: "buyrent", label: "Buy & Rent", icon: <Building2 size={14} /> },
+    { id: "calc", label: "Revenue calculator", icon: <Calculator size={14} /> },
   ];
 
   return (
@@ -608,8 +615,12 @@ export default function DashboardClient() {
         {tab === "market" && <MarketTab market={market} health={health} />}
         {tab === "pricing" && <PricingTab pricing={pricing} market={market} />}
         {tab === "pace" && <PaceTab pace={pace} />}
-        {tab === "invest" && <InvestTab invest={invest} selection={selection} market={market} />}
-        {tab === "rentals" && <RentalsTab rentals={rentals} selection={selection} />}
+        {tab === "buyrent" && (
+          <BuyRentTab invest={invest} rentals={rentals} market={market} selection={selection} />
+        )}
+        {tab === "calc" && (
+          <CalculatorTab invest={invest} market={market} selection={selection} />
+        )}
       </div>
     </div>
   );
