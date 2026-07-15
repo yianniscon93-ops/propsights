@@ -547,8 +547,14 @@ export default function DashboardClient() {
         </div>
       </section>
 
+      {/* Context bar + tabs stick together once the map scrolls away, so the
+          scope and tab switcher stay reachable on long tabs. */}
+      <div
+        className="sticky top-0 z-[950] pt-3 pb-0"
+        style={{ background: "rgba(12,16,10,0.9)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}
+      >
       {/* Context bar: selection + week range + map window */}
-      <div className="px-3 md:px-4 mt-3 flex flex-wrap items-center gap-2.5">
+      <div className="px-3 md:px-4 flex flex-wrap items-center gap-2.5">
         <span className="flex items-center gap-2">
           <Hexagon size={15} style={{ color: UI.green }} />
           <h2 className="font-display font-bold text-xl uppercase tracking-wide" style={{ color: UI.text }}>
@@ -608,6 +614,7 @@ export default function DashboardClient() {
             );
           })}
         </div>
+      </div>
       </div>
 
       {/* Tab content */}

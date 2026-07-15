@@ -241,6 +241,7 @@ export default function BuyRentTab({
             yFmt={(v) => fmtEuro(v)}
             height={120}
             highlightMax
+            showValues
             emptyLabel="No sale listings match this selection"
           />
         </div>
@@ -257,9 +258,10 @@ export default function BuyRentTab({
             data={(rentals?.byBedrooms ?? [])
               .filter((b) => b.count > 0)
               .map((b) => ({ label: `${b.label} (${fmtInt(b.count)})`, value: b.medianRent }))}
-            yFmt={(v) => `${fmtEuro(v)}/mo`}
+            yFmt={(v) => fmtEuro(v)}
             height={120}
             highlightMax
+            showValues
             emptyLabel="No rental listings match this selection"
           />
         </div>
@@ -317,7 +319,7 @@ export default function BuyRentTab({
                       {fmtEuro(d.price)}
                     </td>
                     <td className="py-2.5 pr-4 text-[13px] font-bold whitespace-nowrap" style={{ color: UI.green, borderBottom: `1px solid ${UI.border}` }}>
-                      {d.strYield ? fmtYears(100 / d.strYield) : "—"}
+                      {d.strYield ? `${(100 / d.strYield).toFixed(1)} yrs` : "—"}
                     </td>
                     <td className="py-2.5 pr-4 text-[13px] whitespace-nowrap" style={{ color: UI.muted, borderBottom: `1px solid ${UI.border}` }}>
                       {d.strRevenue != null ? `${fmtEuro(d.strRevenue)}/yr` : "—"}

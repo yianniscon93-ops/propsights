@@ -124,9 +124,10 @@ export default function PaceTab({ pace }: { pace: PaceData | null }) {
               label: fmtMonth(m.month),
               value: m.medianLead,
             }))}
-            yFmt={(v) => `${Math.round(v)} days ahead`}
+            yFmt={(v) => `${Math.round(v)}d`}
             height={120}
             highlightMax
+            showValues
             emptyLabel="No booking data for this scope yet"
           />
           <p className="text-[11px] mt-3" style={{ color: UI.faint }}>

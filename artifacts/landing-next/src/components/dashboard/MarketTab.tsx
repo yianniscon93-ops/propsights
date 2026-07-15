@@ -387,19 +387,42 @@ export default function MarketTab({
                   Strongest & weakest weeks
                 </StatLabel>
               </div>
-              <div className="flex flex-col gap-1.5">
-                {bestWeeks.map((w) => (
-                  <WeekRow key={w.weekStart} w={w} tone="best" />
-                ))}
-                {worstWeeks.length > 0 && (
-                  <>
-                    <div className="h-px my-1" style={{ background: UI.border }} />
+              {gapBench ? (
+                <div className="flex flex-col gap-1.5">
+                  {bestWeeks.map((w) => (
+                    <WeekRow key={w.weekStart} w={w} tone="best" />
+                  ))}
+                  {worstWeeks.length > 0 && (
+                    <>
+                      <div className="h-px my-1" style={{ background: UI.border }} />
+                      {worstWeeks.map((w) => (
+                        <WeekRow key={w.weekStart} w={w} tone="worst" />
+                      ))}
+                    </>
+                  )}
+                </div>
+              ) : (
+                // Full-width card (no benchmark column): strongest and weakest
+                // side by side so rows don't stretch across the whole page.
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-1.5">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: UI.green }}>
+                      Strongest
+                    </p>
+                    {bestWeeks.map((w) => (
+                      <WeekRow key={w.weekStart} w={w} tone="best" />
+                    ))}
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: NEG }}>
+                      Weakest
+                    </p>
                     {worstWeeks.map((w) => (
                       <WeekRow key={w.weekStart} w={w} tone="worst" />
                     ))}
-                  </>
-                )}
-              </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -469,9 +492,10 @@ export default function MarketTab({
             </div>
             <BarsChart
               data={snap.bedrooms.map((b) => ({ label: b.label, value: b.count }))}
-              yFmt={(v) => `${fmtInt(v)} listings`}
+              yFmt={(v) => fmtInt(v)}
               height={110}
               highlightMax
+              showValues
               emptyLabel="No listings in selection"
             />
             <div className="mt-4 flex flex-col gap-2.5">

@@ -213,6 +213,7 @@ export default function PricingTab({
             yFmt={(v) => fmtEuro(v)}
             height={110}
             highlightMax
+            showValues
             emptyLabel="No forward pricing for this selection yet"
           />
         </div>
@@ -236,6 +237,7 @@ export default function PricingTab({
             yFmt={(v) => fmtEuro(v)}
             height={110}
             highlightMax
+            showValues
             emptyLabel="No rate data for this selection"
           />
         </div>
@@ -255,9 +257,10 @@ export default function PricingTab({
               label: b.binStart >= 400 ? "€400+" : `€${b.binStart}–${b.binStart + 50}`,
               value: b.medianOcc,
             }))}
-            yFmt={(v) => `${v.toFixed(0)}% booked`}
+            yFmt={(v) => `${v.toFixed(0)}%`}
             height={110}
             highlightMax
+            showValues
             labelEvery={2}
             emptyLabel="Not enough listings for a price-band split"
           />
@@ -396,9 +399,10 @@ export default function PricingTab({
                     label: fmtMonthLong(m.month),
                     value: m.pctCut10,
                   }))}
-                  yFmt={(v) => `${v.toFixed(1)}% of open dates`}
+                  yFmt={(v) => `${v.toFixed(1)}%`}
                   height={90}
                   highlightMax
+                  showValues
                 />
               </div>
               <div>
@@ -449,6 +453,7 @@ export default function PricingTab({
             yFmt={(v) => fmtEuro(v)}
             height={110}
             highlightMax
+            showValues
             emptyLabel="Not enough priced bookings yet"
           />
           <p className="text-[11px] mt-3" style={{ color: UI.faint }}>
