@@ -5,6 +5,7 @@ import { Info } from "lucide-react";
 import type { AreaHealth, MarketResponse, WeeklyRow } from "@/lib/dashboard/types";
 import { fmtEuro, fmtInt, fmtPct, TYPE_GROUP_LABELS } from "@/lib/dashboard/format";
 import { AMENITIES } from "@/lib/dashboard/filters";
+import { CY_EVENTS, eventsInWeek } from "@/lib/dashboard/events";
 import { currentWeekMonday } from "@/lib/dashboard/weeks";
 import type { ExplainerId } from "@/lib/dashboard/explain";
 import { UI } from "./tokens";
@@ -87,9 +88,11 @@ export default function MarketTab({
   const scope = realized.length ? realized : weekly;
   const kpiIsForward = realized.length === 0 && weekly.length > 0;
   const agg = aggregate(scope);
-  // WoW badge: the two most recent weeks inside the scope.
+  // WoW badge: the two most recent completed weeks inside the scope. In
+  // forward mode there is no "change" — later weeks simply have less on the
+  // books yet — so the badge is suppressed entirely.
   const kpiWeek = scope.at(-1);
-  const prevWeek = scope.length >= 2 ? scope.at(-2) : undefined;
+  const prevWeek = !kpiIsForward && scope.length >= 2 ? scope.at(-2) : undefined;
 
   const kpis: Array<{
     id: ExplainerId;
@@ -191,6 +194,8 @@ export default function MarketTab({
         return {
           label: fmtWeek(w.weekStart),
           value: w.effOcc != null && bw?.effOcc != null ? Math.round((w.effOcc - bw.effOcc) * 10) / 10 : null,
+          // School-holiday ranges span too many bars to mark — point events only.
+          events: eventsInWeek(w.weekStart).filter((e) => e.kind !== "school"),
         };
       })
     : [];
@@ -309,8 +314,9 @@ export default function MarketTab({
             <StatLabel id="eff_occ" align="left">
               Weekly occupancy
             </StatLabel>
-            <span className="text-[11px]" style={{ color: UI.faint }}>
-              %
+            <span className="text-[11px] flex items-center gap-1.5" style={{ color: UI.faint }}>
+              % · dots &amp; shading mark events
+              <Explain id="event_overlay" align="right" />
             </span>
           </div>
           <TrendChart
@@ -319,6 +325,7 @@ export default function MarketTab({
             splitX={cur}
             yFmt={(v) => `${v.toFixed(1)}%`}
             xFmt={fmtWeek}
+            events={CY_EVENTS}
             emptyLabel="No weekly data in this range"
           />
         </div>
@@ -337,6 +344,7 @@ export default function MarketTab({
             splitX={cur}
             yFmt={(v) => fmtEuro(v)}
             xFmt={fmtWeek}
+            events={CY_EVENTS}
             emptyLabel="No weekly data in this range"
           />
         </div>
@@ -355,6 +363,7 @@ export default function MarketTab({
             splitX={cur}
             yFmt={(v) => fmtInt(v)}
             xFmt={fmtWeek}
+            events={CY_EVENTS}
             emptyLabel="No weekly data in this range"
           />
         </div>

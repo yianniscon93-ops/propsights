@@ -7,6 +7,7 @@ import type { DealRow, InvestStats, MarketResponse, RentalStats, Selection } fro
 import { fmtEuro, fmtInt, fmtPct } from "@/lib/dashboard/format";
 import { UI } from "./tokens";
 import { BarsChart } from "./charts";
+import { Slider } from "./controls";
 import Explain, { StatLabel } from "./Explain";
 
 const NEG = "#D98B6A";
@@ -36,6 +37,11 @@ export default function BuyRentTab({
   selection: Selection;
 }) {
   const [budget, setBudget] = useState(500000);
+  // Cost assumptions for the verdict — STR runs far heavier than a tenant
+  // (cleaning, management, platform fees, utilities). Comparing gross to
+  // gross would bias the verdict toward Airbnb.
+  const [strCostPct, setStrCostPct] = useState(40);
+  const [ltrCostPct, setLtrCostPct] = useState(15);
 
   const areaOcc = market?.snapshot?.occQuartiles?.[1] ?? null;
   const medianPrice = invest?.priceQuartiles?.[1] ?? null;
@@ -46,9 +52,17 @@ export default function BuyRentTab({
   const paybackStr = medianPrice != null && strYear ? medianPrice / strYear : null;
   const paybackLtr = medianPrice != null && ltrYear ? medianPrice / ltrYear : null;
 
+  const strNet = strYear != null ? strYear * (1 - strCostPct / 100) : null;
+  const ltrNet = ltrYear != null ? ltrYear * (1 - ltrCostPct / 100) : null;
+  // Parity occupancy scales linearly with the cost ratios: net parity =
+  // gross parity × (1 − LTR costs) / (1 − STR costs).
   const parity = invest?.parityMedian ?? null;
-  const strWins = strYear != null && ltrYear != null && strYear > ltrYear;
-  const verdictMax = Math.max(strYear ?? 0, ltrYear ?? 0, 1);
+  const parityNet =
+    parity != null && strCostPct < 100
+      ? parity * ((1 - ltrCostPct / 100) / (1 - strCostPct / 100))
+      : null;
+  const strWins = strNet != null && ltrNet != null && strNet > ltrNet;
+  const verdictMax = Math.max(strNet ?? 0, ltrNet ?? 0, 1);
 
   const screener = useMemo(
     () => (invest?.screener ?? []).filter((d) => d.price <= budget).slice(0, 8),
@@ -97,15 +111,15 @@ export default function BuyRentTab({
     },
     {
       id: "payback_years" as const,
-      label: "Pays for itself · Airbnb",
+      label: "Pays for itself · Airbnb · gross",
       value: fmtYears(paybackStr),
-      hint: strYear != null ? `est. ${fmtEuro(strYear)}/yr gross` : undefined,
+      hint: strYear != null ? `on est. ${fmtEuro(strYear)}/yr gross, before costs` : undefined,
     },
     {
       id: "payback_years" as const,
-      label: "Pays for itself · tenant",
+      label: "Pays for itself · tenant · gross",
       value: fmtYears(paybackLtr),
-      hint: ltrYear != null ? `est. ${fmtEuro(ltrYear)}/yr gross` : undefined,
+      hint: ltrYear != null ? `on est. ${fmtEuro(ltrYear)}/yr gross, before costs` : undefined,
     },
   ];
 
@@ -153,21 +167,34 @@ export default function BuyRentTab({
         ))}
       </motion.div>
 
-      {/* The verdict: Airbnb it or rent it out? */}
-      {strYear != null && ltrYear != null && (
+      {/* The verdict: Airbnb it or rent it out? Compared NET of costs —
+          gross-to-gross would structurally favour Airbnb. */}
+      {strNet != null && ltrNet != null && strYear != null && ltrYear != null && (
         <div className="glass-card rounded-2xl p-5 mt-2.5">
           <div className="flex items-center justify-between mb-4">
             <StatLabel id="verdict" align="left">
               Airbnb it or rent it out?
             </StatLabel>
             <span className="text-[11px]" style={{ color: UI.faint }}>
-              typical property in this selection · gross per year, before costs
+              typical property in this selection · per year, after the running costs you set below
             </span>
           </div>
           <div className="flex flex-col gap-3.5">
             {[
-              { icon: <Home size={15} />, label: "Short-term (Airbnb)", value: strYear, win: strWins },
-              { icon: <KeyRound size={15} />, label: "Long-term tenant", value: ltrYear, win: !strWins },
+              {
+                icon: <Home size={15} />,
+                label: "Short-term (Airbnb)",
+                value: strNet,
+                gross: strYear,
+                win: strWins,
+              },
+              {
+                icon: <KeyRound size={15} />,
+                label: "Long-term tenant",
+                value: ltrNet,
+                gross: ltrYear,
+                win: !strWins,
+              },
             ].map((r) => (
               <div key={r.label}>
                 <div className="flex items-center justify-between mb-1.5">
@@ -185,6 +212,10 @@ export default function BuyRentTab({
                   </span>
                   <span className="text-sm font-bold" style={{ color: r.win ? UI.green : UI.text }}>
                     {fmtEuro(Math.round(r.value))}/yr
+                    <span className="font-normal text-[11px]" style={{ color: UI.faint }}>
+                      {" "}
+                      · {fmtEuro(Math.round(r.gross))} gross
+                    </span>
                   </span>
                 </div>
                 <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
@@ -203,19 +234,46 @@ export default function BuyRentTab({
               </div>
             ))}
           </div>
-          {parity != null && (
+          <div className="grid grid-cols-2 gap-x-4 mt-4 pt-4" style={{ borderTop: `1px solid ${UI.border}` }}>
+            <Slider
+              label="Airbnb running costs"
+              value={strCostPct}
+              min={20}
+              max={60}
+              step={1}
+              fmt={(v) => `${v}% of revenue`}
+              onChange={setStrCostPct}
+            />
+            <Slider
+              label="Tenant running costs"
+              value={ltrCostPct}
+              min={5}
+              max={30}
+              step={1}
+              fmt={(v) => `${v}% of rent`}
+              onChange={setLtrCostPct}
+            />
+          </div>
+          {parityNet != null && (
             <p className="text-[13px] leading-relaxed mt-4" style={{ color: UI.muted }}>
-              The tipping point: Airbnb wins as long as the calendar stays booked at least{" "}
-              <b style={{ color: UI.text }}>{parity.toFixed(0)}% of nights</b>
-              {areaOcc != null && (
-                <>
-                  {" "}
-                  — this selection currently runs at{" "}
-                  <b style={{ color: areaOcc >= parity ? UI.green : NEG }}>{fmtPct(areaOcc)}</b>
-                  {areaOcc >= parity
-                    ? ", comfortably above it."
-                    : ", below it — the tenant wins today."}
-                </>
+              The tipping point: at these costs, Airbnb wins as long as the calendar stays booked
+              at least{" "}
+              <b style={{ color: UI.text }}>
+                {parityNet > 100 ? "100+" : parityNet.toFixed(0)}% of nights
+              </b>
+              {parityNet > 100 ? (
+                <> — not achievable, so the tenant wins here whatever the calendar does.</>
+              ) : (
+                areaOcc != null && (
+                  <>
+                    {" "}
+                    — this selection currently runs at{" "}
+                    <b style={{ color: areaOcc >= parityNet ? UI.green : NEG }}>{fmtPct(areaOcc)}</b>
+                    {areaOcc >= parityNet
+                      ? ", comfortably above it."
+                      : ", below it — the tenant wins today."}
+                  </>
+                )
               )}{" "}
               Airbnb income takes work; a tenant is hands-off.
             </p>
@@ -293,7 +351,7 @@ export default function BuyRentTab({
             <table className="w-full text-left" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
               <thead>
                 <tr>
-                  {["Listing", "Price", "Pays back in", "Est. earnings", "Based on", "On market", ""].map((h) => (
+                  {["Listing", "Price", "Pays back in · gross", "Est. earnings", "Based on", "On market", ""].map((h) => (
                     <th
                       key={h}
                       className="text-[10px] uppercase tracking-wider font-semibold py-2 pr-4 whitespace-nowrap"

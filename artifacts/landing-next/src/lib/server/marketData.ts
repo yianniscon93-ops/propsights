@@ -369,7 +369,9 @@ export function getPricing(
       const occBands = await sql`
         SELECT (LEAST(FLOOR(avg_nightly_rate / 50), 8) * 50)::int AS bin,
                COUNT(*)::int AS n,
-               percentile_cont(0.5) WITHIN GROUP (ORDER BY eff_occ_todate)::float AS occ
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY eff_occ_todate)::float AS occ,
+               percentile_cont(0.5) WITHIN GROUP
+                 (ORDER BY avg_nightly_rate * eff_occ_todate / 100.0)::float AS revpar
         FROM str_listings
         WHERE (${where}) AND avg_nightly_rate IS NOT NULL AND eff_occ_todate IS NOT NULL
         GROUP BY 1 ORDER BY 1 ASC
@@ -457,6 +459,7 @@ export function getPricing(
             binStart: b.bin,
             count: b.n,
             medianOcc: b.occ != null ? Math.round(b.occ * 10) / 10 : null,
+            medianRevpar: b.revpar != null ? Math.round(b.revpar * 10) / 10 : null,
           })),
         distribution: dist.map((d) => ({ binStart: d.bin_start, count: d.count })),
         byMonth: byMonth.map((m) => ({

@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import type { MarketResponse, PricingData } from "@/lib/dashboard/types";
+import { CY_EVENTS } from "@/lib/dashboard/events";
 import { fmtEuro, fmtPct } from "@/lib/dashboard/format";
 import { currentWeekMonday } from "@/lib/dashboard/weeks";
 import { UI } from "./tokens";
@@ -145,6 +146,7 @@ export default function PricingTab({
             yFmt={(v) => fmtEuro(v)}
             xFmt={fmtDay}
             height={120}
+            events={CY_EVENTS}
             emptyLabel="No forward pricing for this selection yet"
           />
         </div>
@@ -242,22 +244,29 @@ export default function PricingTab({
           />
         </div>
 
-        {/* Occupancy by price band — the sweet spot */}
+        {/* Revenue by price band — the sweet spot is where rate × occupancy
+            peaks, not where occupancy peaks (cheap listings always fill). */}
         <div className="glass-card rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <StatLabel id="sweet_spot" align="left">
-              Occupancy by price band
+              Revenue by price band
             </StatLabel>
             <p className="text-[11px]" style={{ color: UI.faint }}>
-              median occupancy per €50 band · tallest = sweet spot
+              € per available night per €50 band · tallest = sweet spot
             </p>
           </div>
           <BarsChart
             data={(pricing?.occByPrice ?? []).map((b) => ({
               label: b.binStart >= 400 ? "€400+" : `€${b.binStart}–${b.binStart + 50}`,
-              value: b.medianOcc,
+              value: b.medianRevpar ?? null,
             }))}
-            yFmt={(v) => `${v.toFixed(0)}%`}
+            line={{
+              label: "occupancy",
+              barsLabel: "€ / available night",
+              values: (pricing?.occByPrice ?? []).map((b) => b.medianOcc),
+              fmt: (v) => `${v.toFixed(0)}% booked`,
+            }}
+            yFmt={(v) => fmtEuro(Math.round(v))}
             height={110}
             highlightMax
             showValues

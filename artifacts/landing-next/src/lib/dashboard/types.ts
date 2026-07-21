@@ -96,8 +96,14 @@ export interface PricingData {
   premiums?: AmenityPremium[];
   /** Median current rate per bedroom count (today). */
   byBedrooms?: Array<{ label: string; count: number; medianRate: number | null }>;
-  /** Median effective occupancy per €50 rate band (today) — the sweet-spot chart. */
-  occByPrice?: Array<{ binStart: number; count: number; medianOcc: number | null }>;
+  /** Per-€50-rate-band medians (today) — the sweet-spot chart. medianRevpar
+   * is the per-listing rate × occupancy median: € earned per available night. */
+  occByPrice?: Array<{
+    binStart: number;
+    count: number;
+    medianOcc: number | null;
+    medianRevpar?: number | null;
+  }>;
   /** Discounting behaviour (pricing_behavior) — district grain. */
   behavior?: PricingBehavior | null;
   /** Median nightly price paid by lead-time bucket (booking_stays). */

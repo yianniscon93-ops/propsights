@@ -107,8 +107,8 @@ export const EXPLAINERS = {
     text: "The median nightly rate for each property size in your selection, as of today. Use it to sanity-check what a listing of a given size can charge here.",
   },
   sweet_spot: {
-    title: "Occupancy by price band",
-    text: "Listings grouped by their nightly rate, showing the median occupancy in each band. The tallest bar is the market's sweet spot — where price still converts into bookings.",
+    title: "Revenue by price band",
+    text: "Listings grouped by their nightly rate, showing what the typical listing in each band actually earns per available night (rate × occupancy). Cheaper listings almost always fill more — that alone doesn't make them the best price. The tallest bar is where price and bookings together make the most money; the dashed line shows each band's occupancy.",
   },
   freshness: {
     title: "Data freshness",
@@ -162,12 +162,12 @@ export const EXPLAINERS = {
     text: "What a typical property here could gross per year on Airbnb: comparable listings' nightly rate × how often they're actually booked × 365. A modelled estimate from real neighbours, not reported income — treat it as a starting point.",
   },
   payback_years: {
-    title: "Pays for itself in…",
-    text: "The asking price divided by estimated yearly earnings, before costs — how many years of gross income it takes to earn the purchase price back. Shorter is better. It's the same maths as 'gross yield', just in human terms.",
+    title: "Pays for itself in… (gross)",
+    text: "The asking price divided by estimated yearly earnings BEFORE costs — how many years of gross income it takes to earn the purchase price back. Real payback is longer once running costs are in (roughly 1.5–2× for Airbnb, ~1.2× for a tenant). Shorter is better; it's the same maths as 'gross yield', just in human terms. The verdict card below compares the two net of costs.",
   },
   verdict: {
     title: "Airbnb it or rent it out?",
-    text: "We compare what the typical property here grosses per year on Airbnb versus with a long-term tenant. Airbnb usually earns more but takes work and depends on staying booked; the tenant is hands-off. The tipping point tells you how booked you'd need to stay for Airbnb to win.",
+    text: "We compare what the typical property here would keep per year on Airbnb versus with a long-term tenant, after running costs — Airbnb carries much heavier costs (cleaning, management, platform fees, utilities), so comparing gross figures would flatter it. The cost sliders are yours to adjust; the tipping point tells you how booked you'd need to stay for Airbnb to win at those costs.",
   },
   rent_supply: {
     title: "Long-term rentals",
@@ -187,7 +187,7 @@ export const EXPLAINERS = {
   },
   screener: {
     title: "Deal screener",
-    text: "Active listings ranked by how fast their estimated Airbnb earnings pay back the asking price, kept honest: only listings with at least 5 comparable rentals and plausible numbers are shown. Always verify condition, title and licence status before acting on an estimate.",
+    text: "Active listings ranked by how fast their estimated Airbnb earnings pay back the asking price — on gross income, before running costs. Kept honest: only listings with at least 5 comparable rentals and plausible numbers are shown. Always verify condition, title and licence status before acting on an estimate.",
   },
   // --- Revenue calculator ---
   rev_calc: {
@@ -205,6 +205,10 @@ export const EXPLAINERS = {
   mortgage: {
     title: "Mortgage",
     text: "Optional financing: down payment, interest rate and term produce a yearly loan payment that's subtracted from profit. Cash-in includes the down payment plus ~5% purchase costs.",
+  },
+  event_overlay: {
+    title: "Event overlay",
+    text: "Dots mark Cyprus holidays 🕊️, festivals 🎉 and flight-season switches ✈️; shaded bands are source-market school holidays 🏫 (UK, German and Israeli breaks). Hover any week to see what fell in it — events explain most spikes, so check here before crediting or blaming your pricing.",
   },
   // --- Area health / supply ---
   composite_score: {

@@ -192,6 +192,37 @@ export interface TrendSeries {
   data: Array<{ x: string; y: number | null }>;
 }
 
+/** Calendar event drawn over a date-domain chart (see lib/dashboard/events). */
+export interface ChartEvent {
+  name: string;
+  kind: "holiday" | "festival" | "school" | "season";
+  start: string; // ISO date, inclusive
+  end?: string;
+  where?: string;
+}
+
+const EVENT_DOT: Record<ChartEvent["kind"], string> = {
+  holiday: "#8FCC80",
+  festival: "#C9B891",
+  school: "#C9B891",
+  season: "rgba(234,240,223,0.55)",
+};
+const EVENT_EMOJI: Record<ChartEvent["kind"], string> = {
+  holiday: "🕊️",
+  festival: "🎉",
+  school: "🏫",
+  season: "✈️",
+};
+
+/** Tooltip line for an event. */
+export const eventTipLine = (e: ChartEvent): TipLine => ({
+  value: `${EVENT_EMOJI[e.kind]} ${e.name}${e.where ? ` · ${e.where}` : ""}`,
+  color: EVENT_DOT[e.kind],
+});
+
+const dayMs = 86400000;
+const isoMs = (iso: string) => new Date(`${iso}T00:00:00Z`).getTime();
+
 /**
  * Weekly trend with the contract's realized / "on the books" split: weeks
  * from `splitX` onward sit in a shaded forward region. Optional thin
@@ -205,6 +236,7 @@ export function TrendChart({
   xFmt = (x) => x,
   height = 120,
   emptyLabel = "Not enough data yet",
+  events = [],
 }: {
   main: TrendSeries;
   benchmarks?: TrendSeries[];
@@ -214,6 +246,9 @@ export function TrendChart({
   xFmt?: (x: string) => string;
   height?: number;
   emptyLabel?: string;
+  /** Calendar events — only meaningful when x values are ISO dates. Point
+   * events render as dots along the top; school ranges as shaded bands. */
+  events?: ChartEvent[];
 }) {
   const xs$ = main.data.map((p) => p.x);
   const all = [main, ...benchmarks];
@@ -252,6 +287,38 @@ export function TrendChart({
   const splitIdx = xs$.findIndex((x) => x >= splitX);
   const splitPx = splitIdx >= 0 ? xs(splitIdx) : null;
 
+  // Event overlay — maps ISO-dated events onto the x domain. On charts whose
+  // x values aren't dates every comparison is NaN-false, so nothing renders.
+  const ts = xs$.map(isoMs);
+  const domainA = ts[0];
+  const domainB = ts[ts.length - 1];
+  const stepMs = ts.length > 1 ? (domainB - domainA) / (ts.length - 1) : dayMs;
+  const timePx = (time: number) =>
+    PAD + ((time - domainA) / Math.max(1, domainB - domainA)) * (W - PAD * 2);
+  const eventMarks = new Map<number, ChartEvent[]>();
+  for (const e of events) {
+    if (e.kind === "school") continue;
+    const mid = (isoMs(e.start) + isoMs(e.end ?? e.start)) / 2;
+    let best = -1;
+    let bestD = Infinity;
+    ts.forEach((t, i) => {
+      const d = Math.abs(t - mid);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    if (best >= 0 && bestD <= stepMs) eventMarks.set(best, [...(eventMarks.get(best) ?? []), e]);
+  }
+  const eventBands = events
+    .filter((e) => e.kind === "school" && e.end != null)
+    .map((e) => {
+      const a = Math.max(isoMs(e.start), domainA);
+      const b = Math.min(isoMs(e.end!), domainB);
+      return a <= b ? { e, x1: timePx(a), x2: timePx(b) } : null;
+    })
+    .filter((v): v is { e: ChartEvent; x1: number; x2: number } => v != null);
+
   const mainSeries = main.data.filter((p): p is { x: string; y: number } => p.y != null);
   const last = mainSeries[mainSeries.length - 1];
   const gradId = `tc-${Math.round(max * 7 + min * 3 + xs$.length)}`;
@@ -259,16 +326,28 @@ export function TrendChart({
   const hoverX = hover != null ? xs$[hover] : null;
   const atX = (s: TrendSeries) =>
     hoverX != null ? (s.data.find((p) => p.x === hoverX)?.y ?? null) : null;
+  const hoverEvents: ChartEvent[] =
+    hover != null
+      ? [
+          ...(eventMarks.get(hover) ?? []),
+          ...eventBands
+            .filter(({ e }) => isoMs(e.start) <= ts[hover] && ts[hover] <= isoMs(e.end!))
+            .map(({ e }) => e),
+        ]
+      : [];
   const hoverLines: TipLine[] =
     hoverX != null
-      ? all
-          .map((s) => ({ s, v: atX(s) }))
-          .filter((e): e is { s: TrendSeries; v: number } => e.v != null)
-          .map(({ s, v }) => ({
-            label: all.length > 1 ? s.label : undefined,
-            value: yFmt(v),
-            color: s.color,
-          }))
+      ? [
+          ...all
+            .map((s) => ({ s, v: atX(s) }))
+            .filter((e): e is { s: TrendSeries; v: number } => e.v != null)
+            .map(({ s, v }) => ({
+              label: all.length > 1 ? s.label : undefined,
+              value: yFmt(v),
+              color: s.color,
+            })),
+          ...hoverEvents.map(eventTipLine),
+        ]
       : [];
 
   return (
@@ -285,6 +364,16 @@ export function TrendChart({
             <stop offset="100%" stopColor={main.color} stopOpacity="0" />
           </linearGradient>
         </defs>
+        {eventBands.map(({ e, x1, x2 }) => (
+          <rect
+            key={`band-${e.name}`}
+            x={x1}
+            y={0}
+            width={Math.max(1, x2 - x1)}
+            height={H}
+            fill="rgba(201,184,145,0.06)"
+          />
+        ))}
         {splitPx != null && (
           <>
             <rect x={splitPx} y={0} width={W - PAD - splitPx} height={H} fill="rgba(255,255,255,0.045)" />
@@ -324,6 +413,18 @@ export function TrendChart({
           vectorEffect="non-scaling-stroke"
         />
         {last && <circle cx={xs(xi.get(last.x)!)} cy={ys(last.y)} r={3} fill={main.color} stroke={UI.bg} strokeWidth={1.5} />}
+        {[...eventMarks.entries()].map(([i, evs]) => (
+          <circle
+            key={`ev-${i}`}
+            cx={xs(i)}
+            cy={7}
+            r={2.6}
+            fill={EVENT_DOT[evs[0].kind]}
+            stroke={UI.bg}
+            strokeWidth={1}
+            opacity={0.9}
+          />
+        ))}
         {hover != null && (
           <line
             x1={xs(hover)}
@@ -402,7 +503,8 @@ export function GapBars({
   labelEvery = 4,
   emptyLabel = "Not enough data yet",
 }: {
-  data: Array<{ label: string; value: number | null }>;
+  /** events: pre-resolved calendar events for that bar's period (tooltip + dot). */
+  data: Array<{ label: string; value: number | null; events?: ChartEvent[] }>;
   yFmt?: (v: number) => string;
   height?: number;
   labelEvery?: number;
@@ -440,6 +542,12 @@ export function GapBars({
           const up = (v ?? 0) >= 0;
           return (
             <div key={`${d.label}-${i}`} className="flex-1 relative" onMouseEnter={() => setHover(i)}>
+              {d.events && d.events.length > 0 && (
+                <span
+                  className="absolute left-1/2 -translate-x-1/2 rounded-full"
+                  style={{ top: 1, width: 5, height: 5, background: EVENT_DOT[d.events[0].kind], opacity: 0.9 }}
+                />
+              )}
               {v != null && (
                 <div
                   className="absolute left-0 right-0 rounded-[2px]"
@@ -465,6 +573,7 @@ export function GapBars({
                 value: `${hv.value >= 0 ? "+" : ""}${yFmt(hv.value)}`,
                 color: hv.value >= 0 ? UI.green : "#D98B6A",
               },
+              ...(hv.events ?? []).map(eventTipLine),
             ]}
           />
         )}
@@ -573,6 +682,7 @@ export function BarsChart({
   labelEvery = 1,
   showValues = false,
   emptyLabel = "Not enough data yet",
+  line,
 }: {
   data: Array<{ label: string; value: number | null }>;
   yFmt?: (v: number) => string;
@@ -583,6 +693,15 @@ export function BarsChart({
   /** Print each bar's value above it — only for charts with ~12 bars or fewer. */
   showValues?: boolean;
   emptyLabel?: string;
+  /** Optional overlay line on its own scale — one value per bar (e.g. occupancy over RevPAR bars). */
+  line?: {
+    label: string;
+    values: Array<number | null>;
+    fmt: (v: number) => string;
+    color?: string;
+    /** Legend label for the bars themselves (legend only renders with a line). */
+    barsLabel?: string;
+  };
 }) {
   const vals = data.map((d) => d.value ?? 0);
   const max = Math.max(...vals, 0);
@@ -601,6 +720,24 @@ export function BarsChart({
 
   // With values on, bars top out below 100% so the label row always fits.
   const cap = showValues ? 82 : 100;
+
+  // Overlay line on its own 0→max scale, kept inside the top ~70% band so it
+  // doesn't collide with bar value labels at the base.
+  const lineColor = line?.color ?? "#C9B891";
+  const lineVals = line?.values ?? [];
+  const lineMax = Math.max(...lineVals.filter((v): v is number => v != null), 1);
+  const linePts = line
+    ? data
+        .map((_, i) => {
+          const v = lineVals[i];
+          if (v == null) return null;
+          const x = ((i + 0.5) / data.length) * 100;
+          const y = 12 + (1 - v / lineMax) * 55;
+          return `${x},${y}`;
+        })
+        .filter((p): p is string => p != null)
+        .join(" ")
+    : "";
 
   return (
     <div>
@@ -643,11 +780,35 @@ export function BarsChart({
             </div>
           );
         })}
+        {line && linePts && (
+          <svg
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            className="absolute inset-0 w-full h-full pointer-events-none"
+          >
+            <polyline
+              points={linePts}
+              fill="none"
+              stroke={lineColor}
+              strokeWidth={1.6}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="4 3"
+              vectorEffect="non-scaling-stroke"
+              opacity={0.9}
+            />
+          </svg>
+        )}
         {hover != null && data[hover]?.value != null && (
           <ChartTip
             xPct={((hover + 0.5) / data.length) * 100}
             title={data[hover].label}
-            lines={[{ value: yFmt(data[hover].value!) }]}
+            lines={[
+              { value: yFmt(data[hover].value!) },
+              ...(line && lineVals[hover] != null
+                ? [{ label: line.label, value: line.fmt(lineVals[hover]!), color: lineColor }]
+                : []),
+            ]}
           />
         )}
       </div>
@@ -662,6 +823,20 @@ export function BarsChart({
           </span>
         ))}
       </div>
+      {line && (
+        <div className="flex items-center gap-3 mt-1.5">
+          {line.barsLabel && (
+            <span className="flex items-center gap-1.5 text-[11px]" style={{ color: UI.muted }}>
+              <span className="w-2.5 h-2.5 rounded-[3px] inline-block" style={{ background: "rgba(143,204,128,0.7)" }} />
+              {line.barsLabel}
+            </span>
+          )}
+          <span className="flex items-center gap-1.5 text-[11px]" style={{ color: UI.muted }}>
+            <span className="w-3 h-[2px] rounded-full inline-block" style={{ background: lineColor }} />
+            {line.label}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
